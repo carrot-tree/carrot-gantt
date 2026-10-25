@@ -1,0 +1,41 @@
+name: Release plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version matching manifest.json (for example 1.2.0)'
+        required: true
+        type: string
+  push:
+    tags:
+      - '[0-9]*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify release and run tests
+        env:
+          RELEASE_TAG: ${{ inputs.version || github.ref_name }}
+        run: |
+          node --check main.js
+          node scripts/verify-release.cjs "$RELEASE_TAG"
+          node --test tests/*.test.cjs
+      - name: Publish BRAT assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.version || github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" main.js manifest.json styles.css \
+            --target "$GITHUB_SHA" --title "$RELEASE_TAG" --notes-file RELEASE_NOTES.md

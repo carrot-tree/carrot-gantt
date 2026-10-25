@@ -1,0 +1,21 @@
+name: Verify plugin
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check main.js
+      - run: node scripts/verify-release.cjs
+      - run: node --test tests/*.test.cjs
