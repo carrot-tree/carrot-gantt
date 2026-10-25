@@ -54,7 +54,7 @@ node scripts/verify-release.cjs
 
 测试仅使用内存中的虚构笔记，不访问本地 Obsidian 笔记库。
 
-发布新版本时，更新 `manifest.json` 的 `version`、`versions.json`、`CHANGELOG.md` 和 `RELEASE_NOTES.md`，提交后推送与版本号完全一致的标签，例如：
+发布新版本时，更新 `manifest.json` 的 `version`、`versions.json`、`CHANGELOG.md` 和 `RELEASE_NOTES.md` 并提交。随后可以在 GitHub **Actions → Release plugin → Run workflow** 中输入版本号，或推送与版本号完全一致的标签，例如：
 
 ```sh
 git tag 1.2.1
