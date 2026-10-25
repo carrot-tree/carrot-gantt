@@ -1,0 +1,2948 @@
+.hearth-gantt-view {
+  --hg-accent: var(--interactive-accent, #8ec723);
+  --hg-line: color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
+  --hg-card: color-mix(in srgb, var(--background-primary) 88%, transparent);
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+}
+
+.hg-topbar {
+  /* Keep the accent on the topbar itself: when embedded in a Carrot Home card
+     the topbar is reparented into .hearth-card-head, outside .hearth-gantt-view,
+     so anything relying on that ancestor's --hg-accent would go invalid. */
+  --hg-accent: var(--interactive-accent, #8ec723);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--hg-accent) 30%, var(--background-modifier-border));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--hg-accent) 9%, transparent), transparent 74%);
+}
+
+.hg-title { font-size: 1.02rem; font-weight: 850; letter-spacing: -0.02em; }
+.hg-subtitle { margin-top: 2px; font-size: 0.76rem; color: var(--text-muted); }
+.hg-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* Topbar buttons: same quiet-at-rest / accented-on-hover language as the
+   Carrot Home card toolbar (--carrot-task-control / -hover / -line formulas).
+   Scoped to .hg-topbar .hg-button (0,2,0) so it wins over Obsidian's base
+   button:not(.clickable-icon) (0,1,1), which would otherwise paint every
+   hg-button with --interactive-normal / --text-normal. Popover buttons are
+   handled separately by the popover refinement block below. */
+.hg-topbar .hg-button {
+  border: 1px solid color-mix(in srgb, var(--hg-accent) 18%, transparent);
+  background: color-mix(in srgb, var(--background-secondary) 62%, transparent);
+  color: var(--text-muted);
+  border-radius: 9px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: none;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+.hg-topbar .hg-button:hover,
+.hg-topbar .hg-button:focus-visible {
+  background: color-mix(in srgb, var(--hg-accent) 13%, var(--background-primary));
+  border-color: color-mix(in srgb, var(--hg-accent) 30%, var(--background-modifier-border));
+  color: var(--hg-accent);
+}
+.hg-topbar .hg-button:active { transform: translateY(1px); }
+.hg-topbar .hg-primary { background: var(--hg-accent); border-color: var(--hg-accent); color: var(--text-on-accent); }
+.hg-topbar .hg-primary:hover { filter: brightness(1.03); color: var(--text-on-accent); }
+.hg-topbar .hg-danger { color: var(--text-error); border-color: color-mix(in srgb, var(--text-error) 35%, var(--background-modifier-border)); background: color-mix(in srgb, var(--text-error) 8%, transparent); }
+.hg-topbar .hg-danger:hover { background: color-mix(in srgb, var(--text-error) 14%, var(--background-primary)); color: var(--text-error); }
+
+.hg-board {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(190px, 250px) minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.hg-label-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--hg-line);
+  background: color-mix(in srgb, var(--background-secondary) 46%, transparent);
+}
+
+.hg-label-header {
+  flex: 0 0 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--hg-line);
+}
+
+.hg-label-rows { overflow: hidden; }
+.hg-timeline-pane { position: relative; overflow: auto; min-width: 0; min-height: 0; }
+.hg-timeline-pane::-webkit-scrollbar { height: 10px; width: 10px; }
+.hg-timeline-pane::-webkit-scrollbar-thumb { border: 3px solid transparent; border-radius: 999px; background-clip: content-box; background-color: color-mix(in srgb, var(--hg-accent) 45%, var(--background-modifier-border)); }
+
+.hg-timeline-pane.is-pinching {
+  touch-action: none !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.hg-pinch-indicator {
+  position: absolute;
+  z-index: 80;
+  transform: translate(-50%, -50%);
+  min-width: 92px;
+  padding: 7px 11px;
+  border: 1px solid color-mix(in srgb, var(--hg-accent) 38%, var(--background-modifier-border));
+  border-radius: 999px;
+  background: color-mix(
+    in srgb,
+    var(--background-modifier-form-field, var(--color-base-00, #fff)) 88%,
+    transparent
+  );
+  color: color-mix(in srgb, var(--hg-accent) 26%, var(--text-normal));
+  font-size: .72rem;
+  font-weight: 780;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 6px 18px color-mix(in srgb, #000 10%, transparent);
+}
+
+.hg-time-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 48px;
+  display: flex;
+  border-bottom: 1px solid var(--hg-line);
+  background: color-mix(in srgb, var(--background-primary) 86%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.hg-day {
+  position: relative;
+  height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-right: 1px solid color-mix(in srgb, var(--background-modifier-border) 55%, transparent);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+.hg-day.is-weekend { background: color-mix(in srgb, var(--background-secondary) 55%, transparent); }
+.hg-day.is-today { color: var(--hg-accent); font-weight: 900; }
+.hg-month { font-size: 0.62rem; opacity: 0.78; }
+
+.hg-time-rows { position: relative; }
+.hg-project-label,
+.hg-track {
+  height: 60px;
+  box-sizing: border-box;
+  border-bottom: 1px solid color-mix(in srgb, var(--background-modifier-border) 48%, transparent);
+}
+
+.hg-project-label {
+  --project-color: var(--hg-accent);
+  padding: 9px 12px 8px;
+  cursor: pointer;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--project-color) 7%, transparent), transparent 75%);
+}
+.hg-project-label:hover { background-color: color-mix(in srgb, var(--project-color) 8%, transparent); }
+.hg-project-label:focus-visible {
+  z-index: 2;
+  outline: 2px solid color-mix(in srgb, var(--project-color) 72%, var(--text-normal));
+  outline-offset: -3px;
+}
+.hg-project-name-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.hg-color-dot { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 999px; background: var(--project-color); box-shadow: 0 0 0 3px color-mix(in srgb, var(--project-color) 16%, transparent); }
+.hg-project-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 820; }
+.hg-status { flex: 0 0 auto; padding: 2px 6px; border-radius: 999px; font-size: 0.65rem; color: color-mix(in srgb, var(--project-color) 75%, var(--text-normal)); background: color-mix(in srgb, var(--project-color) 12%, transparent); }
+.hg-project-meta-row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+.hg-project-meta { margin-top: 0; color: var(--text-muted); font-size: 0.72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hg-project-progress {
+  width: min(132px, 86%);
+  height: 4px;
+  margin-top: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--project-color) 12%, var(--background-modifier-border));
+}
+.hg-project-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--project-color);
+  transition: width 180ms ease;
+}
+
+.hg-track {
+  --cell-width: 34px;
+  position: relative;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--background-modifier-border) 38%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      to right,
+      transparent 0 var(--workweek-width),
+      color-mix(in srgb, var(--background-secondary) 48%, transparent) var(--workweek-width) var(--week-width)
+    );
+  background-size: var(--cell-width) 100%, var(--week-width) 100%;
+  background-position: 0 0, var(--week-offset, 0px) 0;
+}
+.hearth-gantt-view.hide-weekend-shading .hg-track {
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--background-modifier-border) 38%, transparent) 1px, transparent 1px);
+  background-size: var(--cell-width) 100%;
+  background-position: 0 0;
+}
+.hg-track:hover { background-color: color-mix(in srgb, var(--project-color, var(--hg-accent)) 6%, transparent); }
+.hg-project-label.is-row-hover,
+.hg-track.is-row-hover {
+  background-color: color-mix(in srgb, var(--project-color, var(--hg-accent)) 6%, transparent);
+}
+.hg-today-line { position: absolute; top: 0; bottom: 0; width: 2px; transform: translateX(-1px); background: color-mix(in srgb, var(--hg-accent) 80%, transparent); z-index: 1; opacity: 0.8; }
+
+.hg-bar {
+  --project-color: var(--hg-accent);
+  position: absolute;
+  top: 13px;
+  height: 34px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--background-primary);
+  border: 1.5px solid color-mix(in srgb, var(--project-color) 75%, var(--background-modifier-border));
+  box-shadow: 0 6px 14px rgba(0,0,0,.10);
+  cursor: grab;
+  z-index: 2;
+  user-select: none;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.hg-bar:hover { transform: translateY(-1px); box-shadow: 0 10px 20px rgba(0,0,0,.14); }
+.hg-bar.is-dragging { cursor: grabbing; transform: scale(1.01); opacity: .92; }
+.hg-bar-progress { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--project-color) 40%, var(--background-primary)); opacity: 1; }
+.hg-bar-title { position: relative; z-index: 1; display: block; padding: 8px 28px; color: var(--text-normal); font-size: 0.78rem; font-weight: 750; text-shadow: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hg-resize { position: absolute; top: 0; bottom: 0; width: 14px; z-index: 3; cursor: ew-resize; }
+.hg-resize-start { left: 0; }
+.hg-resize-end { right: 0; }
+.hg-resize::after { content: ''; position: absolute; top: 10px; bottom: 10px; width: 2px; border-radius: 999px; background: color-mix(in srgb, var(--text-normal) 42%, transparent); }
+.hg-resize-start::after { left: 6px; }
+.hg-resize-end::after { right: 6px; }
+
+.hg-popover {
+  --project-color: var(--hg-accent);
+  position: absolute;
+  z-index: 50;
+  width: min(320px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  padding: 13px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--project-color) 35%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--background-primary) 96%, transparent);
+  box-shadow: 0 24px 50px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.18);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+.hg-popover-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.hg-popover-title { font-weight: 850; }
+.hg-icon-btn { width: 26px; height: 26px; border-radius: 999px; border: 0; background: var(--background-modifier-hover); color: var(--text-muted); cursor: pointer; }
+.hg-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 9px; font-size: 0.72rem; font-weight: 750; color: var(--text-muted); }
+.hg-field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.hg-input { width: 100%; border-radius: 10px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-normal); padding: 8px 9px; font: inherit; box-sizing: border-box; }
+.hg-input:focus { border-color: var(--project-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--project-color) 18%, transparent); outline: none; }
+.hg-textarea { resize: vertical; min-height: 70px; }
+.hg-color-input { min-height: 36px; padding: 4px; }
+.hg-progress-line { display: flex; align-items: center; gap: 9px; }
+.hg-range { flex: 1; accent-color: var(--project-color); }
+.hg-progress-text { min-width: 38px; text-align: right; color: var(--text-normal); }
+.hg-popover-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+.hearth-leaf-host .hearth-gantt-view { background: transparent; }
+
+/* Project/task linked Gantt layout */
+.hg-board { grid-template-columns: minmax(170px, 200px) minmax(0, 1fr); }
+.hg-label-rows { overflow: hidden; }
+.hg-project-label {
+  position: relative;
+  min-height: 0;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+.hg-project-track {
+  min-height: 0;
+}
+.hg-add-task-btn {
+  align-self: flex-start;
+  border: 1px solid color-mix(in srgb, var(--project-color) 34%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--project-color) 10%, var(--background-primary));
+  color: var(--text-normal);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.hg-add-task-btn:hover { background: color-mix(in srgb, var(--project-color) 18%, var(--background-primary)); }
+.hg-task-bar {
+  height: 30px;
+  border-radius: 11px;
+}
+.hg-task-bar .hg-bar-title {
+  padding: 6px 15px 6px 11px;
+  font-size: 0.7rem;
+}
+.hg-task-bar:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--project-color) 78%, var(--text-normal));
+  outline-offset: 2px;
+}
+
+/* One-day tasks are common in TaskNotes. Match Notion's timeline treatment:
+   the title starts at the task bar's own left padding, while the text layer is
+   allowed to continue beyond the bar's right edge. */
+.hg-task-bar.is-short {
+  overflow: visible;
+}
+.hg-task-bar.is-short .hg-bar-progress {
+  overflow: hidden;
+  max-width: 100%;
+  border-radius: inherit;
+}
+.hg-task-bar.is-short .hg-bar-title {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: max-content;
+  max-width: 240px;
+  padding: 6px 15px 6px 11px;
+  transform: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.hg-task-bar.is-done.is-short .hg-bar-title {
+  padding-left: 20px;
+}
+.hg-empty-tasks {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  font-size: 0.76rem;
+  pointer-events: none;
+}
+.hg-task-project-hint {
+  margin: -2px 0 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--project-color) 10%, transparent);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.hg-task-bar { touch-action: none; }
+
+/* Linked Kanban data-source polish */
+.hg-loading,
+.hg-empty-state {
+  margin: 18px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--hg-accent) 20%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--background-primary) 72%, transparent);
+  color: var(--text-muted);
+  font-size: 0.86rem;
+}
+.hg-check-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 10px;
+  font-size: 0.78rem;
+  font-weight: 750;
+  color: var(--text-muted);
+}
+.hg-check-field input { accent-color: var(--project-color); }
+.hg-project-label { min-height: 0; }
+.hg-project-track { min-height: 0; }
+.hg-status { white-space: nowrap; }
+.hg-task-bar.is-done {
+  opacity: 1;
+  background:
+    repeating-linear-gradient(135deg, rgba(127, 127, 127, 0.12) 0 6px, transparent 6px 12px),
+    color-mix(in srgb, var(--project-color) 12%, var(--background-primary));
+  border-color: color-mix(in srgb, var(--project-color) 28%, transparent);
+  box-shadow: none;
+}
+.hg-task-bar.is-done .hg-bar-progress {
+  background: color-mix(in srgb, var(--project-color) 26%, var(--background-primary));
+}
+.hg-task-bar.is-done .hg-bar-title {
+  padding-left: 20px;
+  color: color-mix(in srgb, var(--text-normal) 68%, transparent);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-shadow: none;
+  font-weight: 650;
+}
+.hg-done-mark {
+  position: absolute;
+  z-index: 2;
+  left: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: color-mix(in srgb, var(--project-color) 70%, var(--text-muted));
+  font-size: 0.7rem;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+/* Keep left project rows vertically locked to the right timeline scroller. */
+.hg-label-rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding-bottom: var(--hg-timeline-scrollbar-bottom, 0px);
+}
+.hg-task-bar { touch-action: none; }
+
+/* Project-property model + timeline zoom controls */
+.hg-zoom-label {
+  align-self: center;
+  padding: 0 2px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+.hg-zoom-btn {
+  min-width: 32px;
+  padding-left: 9px;
+  padding-right: 9px;
+  font-size: 1rem;
+  line-height: 1;
+}
+.hg-task-bar .hg-bar-title { max-width: 100%; }
+.hg-project-label .hg-status { max-width: 62px; }
+
+/* Hide zoom scale text; buttons are self-explanatory. */
+.hg-zoom-label { display: none !important; }
+
+/* Unified project color presets instead of native color picker */
+.hg-color-preset-field { gap: 8px; }
+.hg-color-presets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+.hg-color-preset {
+  --preset-color: var(--hg-accent);
+  position: relative;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--preset-color) 42%, var(--background-modifier-border));
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--preset-color) 72%, white) 0%,
+      var(--preset-color) 54%,
+      color-mix(in srgb, var(--preset-color) 74%, black) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.32), 0 6px 14px rgba(0,0,0,.10);
+  cursor: pointer;
+}
+.hg-color-preset:hover { transform: translateY(-1px); }
+.hg-color-preset.is-selected {
+  border-color: var(--preset-color);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--preset-color) 22%, transparent),
+    0 8px 18px rgba(0,0,0,.16),
+    inset 0 1px 0 rgba(255,255,255,.36);
+}
+.hg-color-preset.is-selected::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 900;
+  font-size: 0.9rem;
+  text-shadow: 0 1px 2px rgba(0,0,0,.35);
+}
+
+/* Polish project row spacing and preset color palette */
+.hg-subtitle {
+  max-width: 820px;
+  line-height: 1.45;
+}
+.hg-project-label {
+  min-height: 104px !important;
+  padding: 14px 14px 58px !important;
+}
+.hg-project-track {
+  min-height: 104px !important;
+}
+.hg-project-name-line {
+  gap: 9px;
+  margin-bottom: 0;
+}
+.hg-project-meta {
+  margin-top: 0 !important;
+  line-height: 1.35;
+  padding-right: 4px;
+}
+.hg-color-preset-field {
+  margin-bottom: 12px;
+}
+.hg-color-presets {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 10px !important;
+  padding: 2px 0 4px;
+}
+.hg-color-preset {
+  width: 34px !important;
+  height: 34px !important;
+  flex: 0 0 34px;
+  border-radius: 12px !important;
+  padding: 0;
+}
+.hg-color-preset.is-selected {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--preset-color) 20%, transparent),
+    inset 0 1px 0 rgba(255,255,255,.32) !important;
+}
+.hg-color-preset.is-selected::after {
+  font-size: 0.82rem !important;
+}
+.hg-popover-actions {
+  align-items: center;
+  gap: 10px !important;
+}
+
+/* Fix project-row +Task button: keep it in the title row instead of a large
+   absolutely-positioned pill that pushes the metadata layout apart. */
+.hg-project-label {
+	padding: 14px !important;
+	min-height: 82px !important;
+}
+.hg-project-track {
+	min-height: 82px !important;
+}
+.hg-project-name-line {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+.hg-project-name {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.hg-project-name-line .hg-status {
+	order: 2;
+	flex: 0 0 auto;
+}
+.hg-project-name-line .hg-add-task-btn {
+	display: none;
+}
+.hg-project-meta {
+	margin-top: 8px !important;
+	padding-right: 0 !important;
+}
+
+/* Fix project/task popover footer: 4 action buttons cannot fit safely in one row
+   inside Carrot Home cards, so lay them out as a compact responsive grid. */
+.hg-popover {
+	width: min(420px, calc(100% - 24px));
+	box-sizing: border-box;
+}
+.hg-popover-actions {
+	display: grid !important;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 10px !important;
+	justify-content: stretch !important;
+	align-items: stretch !important;
+	margin-top: 12px !important;
+}
+.hg-popover-actions .hg-button {
+	width: 100%;
+	min-width: 0;
+	justify-content: center;
+	white-space: nowrap;
+	padding-left: 10px;
+	padding-right: 10px;
+	box-sizing: border-box;
+}
+.hg-popover-actions .hg-primary {
+	grid-column: 1 / -1;
+}
+@media (max-width: 420px) {
+	.hg-popover-actions {
+		grid-template-columns: 1fr;
+	}
+	.hg-popover-actions .hg-primary {
+		grid-column: auto;
+	}
+}
+
+
+/* Compact embedded header: Carrot Home card already provides the title, so keep only actions. */
+.hg-topbar.hg-topbar-actions-only {
+  justify-content: flex-end;
+  padding: 10px 14px 9px;
+  min-height: 54px;
+}
+.hg-topbar.hg-topbar-actions-only .hg-actions {
+  margin-left: auto;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* In Carrot Home cards, lift the Gantt action bar into the card title row. */
+.hearth-card:has(.hearth-gantt-view),
+.hearth-card:has(.hearth-gantt-view) > .hearth-card-body.hearth-card-body-live,
+.hearth-card:has(.hearth-gantt-view) .hearth-leaf-host,
+.hearth-card:has(.hearth-gantt-view) .workspace-leaf,
+.hearth-card:has(.hearth-gantt-view) .workspace-leaf-content,
+.hearth-card:has(.hearth-gantt-view) .view-content,
+.hearth-card:has(.hearth-gantt-view) .hearth-gantt-view {
+  overflow: visible;
+}
+.hearth-card:has(.hearth-gantt-view) > .hearth-card-head {
+  position: relative;
+  min-height: 40px;
+  padding-right: min(540px, 62%);
+}
+.hearth-card:has(.hearth-gantt-view) .hg-topbar.hg-topbar-actions-only {
+  position: absolute;
+  top: -50px;
+  right: 14px;
+  z-index: 30;
+  width: auto;
+  max-width: calc(100% - 220px);
+  min-height: 0;
+  padding: 0;
+  border-bottom: 0;
+  background: transparent;
+}
+.hearth-card:has(.hearth-gantt-view) .hg-topbar.hg-topbar-actions-only .hg-actions {
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+.hearth-card:has(.hearth-gantt-view) .hg-topbar.hg-topbar-actions-only .hg-button {
+  height: 30px;
+  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .hearth-card:has(.hearth-gantt-view) > .hearth-card-head {
+    padding-right: 14px;
+  }
+  .hearth-card:has(.hearth-gantt-view) .hg-topbar.hg-topbar-actions-only {
+    position: static;
+    width: 100%;
+    max-width: none;
+    padding: 6px 10px;
+    border-bottom: 1px solid color-mix(in srgb, var(--hg-accent) 30%, var(--background-modifier-border));
+    background: linear-gradient(90deg, color-mix(in srgb, var(--hg-accent) 9%, transparent), transparent 74%);
+  }
+  .hearth-card:has(.hearth-gantt-view) .hg-topbar.hg-topbar-actions-only .hg-actions {
+    flex-wrap: wrap;
+  }
+}
+
+
+/* Robust version: when embedded in Carrot Home, the Gantt action bar is physically
+   moved into Carrot Home's card header. Keep it visible and eliminate the old spacer. */
+.hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head {
+  position: static !important;
+  top: auto !important;
+  right: auto !important;
+  z-index: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin-left: auto !important;
+  border-bottom: 0 !important;
+  background: transparent !important;
+  overflow: visible !important;
+  flex: 0 0 auto;
+}
+.hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head .hg-actions {
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: nowrap;
+  margin-left: 12px !important;
+}
+.hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head .hg-button {
+  height: 30px;
+  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+.hearth-card:has(> .hearth-card-head > .hg-topbar.hg-topbar-in-card-head) > .hearth-card-head {
+  gap: 12px;
+  padding-right: 14px !important;
+}
+.hearth-card:has(> .hearth-card-head > .hg-topbar.hg-topbar-in-card-head) > .hearth-card-head .hearth-card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 900px) {
+  .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head .hg-button {
+    padding-inline: 8px;
+    font-size: 0.76rem;
+  }
+}
+
+/* Compact task editor popover and keep it inside the visible Gantt card. */
+.hg-popover.hg-task-popover {
+  width: min(380px, calc(100% - 24px));
+  max-height: min(620px, calc(100% - 24px));
+  padding: 12px;
+}
+.hg-task-popover .hg-field {
+  margin-bottom: 8px;
+  gap: 4px;
+}
+.hg-task-popover .hg-field-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.hg-task-popover .hg-input {
+  min-width: 0;
+  height: 38px;
+  padding: 7px 9px;
+}
+.hg-task-popover .hg-textarea {
+  height: 86px;
+  min-height: 86px;
+}
+.hg-task-popover .hg-check-field {
+  margin: 7px 0 10px;
+}
+.hg-task-popover .hg-popover-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.hg-task-popover .hg-popover-actions .hg-primary {
+  grid-column: 1 / -1;
+}
+@media (max-width: 390px) {
+  .hg-task-popover .hg-field-grid,
+  .hg-task-popover .hg-popover-actions {
+    grid-template-columns: 1fr;
+  }
+  .hg-task-popover .hg-popover-actions .hg-primary {
+    grid-column: auto;
+  }
+}
+
+
+/* Compact project/task popovers: reduce visual bulk inside Carrot Home cards. */
+.hg-popover {
+  width: min(340px, calc(100% - 20px)) !important;
+  max-height: min(520px, calc(100% - 20px)) !important;
+  padding: 10px !important;
+  border-radius: 14px !important;
+  font-size: 0.88em !important;
+}
+
+.hg-popover.hg-task-popover {
+  width: min(320px, calc(100% - 20px)) !important;
+  max-height: min(500px, calc(100% - 20px)) !important;
+  padding: 10px !important;
+}
+
+.hg-popover-header {
+  margin-bottom: 7px !important;
+  min-height: 26px !important;
+}
+
+.hg-popover-title {
+  font-size: 1rem !important;
+  line-height: 1.2 !important;
+}
+
+.hg-icon-btn {
+  width: 24px !important;
+  height: 24px !important;
+  line-height: 24px !important;
+  font-size: 1rem !important;
+}
+
+.hg-field,
+.hg-task-popover .hg-field {
+  gap: 3px !important;
+  margin-bottom: 7px !important;
+  font-size: 0.68rem !important;
+  line-height: 1.25 !important;
+}
+
+.hg-input,
+.hg-task-popover .hg-input {
+  min-height: 32px !important;
+  height: 32px !important;
+  padding: 5px 8px !important;
+  border-radius: 9px !important;
+  font-size: 0.78rem !important;
+  line-height: 1.25 !important;
+}
+
+.hg-textarea,
+.hg-task-popover .hg-textarea {
+  height: 58px !important;
+  min-height: 58px !important;
+  padding-top: 6px !important;
+  resize: vertical !important;
+}
+
+.hg-field-grid,
+.hg-task-popover .hg-field-grid {
+  gap: 7px !important;
+}
+
+.hg-color-preset-field {
+  margin-bottom: 8px !important;
+}
+
+.hg-color-presets {
+  gap: 7px !important;
+  padding: 0 0 2px !important;
+}
+
+.hg-color-preset {
+  width: 28px !important;
+  height: 28px !important;
+  flex-basis: 28px !important;
+  border-radius: 9px !important;
+}
+
+.hg-color-preset.is-selected {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--preset-color) 22%, transparent),
+    inset 0 1px 0 rgba(255,255,255,.30) !important;
+}
+
+.hg-task-project-hint {
+  margin: 6px 0 8px !important;
+  padding: 7px 9px !important;
+  border-radius: 10px !important;
+  font-size: 0.72rem !important;
+  line-height: 1.35 !important;
+}
+
+.hg-check-field,
+.hg-task-popover .hg-check-field {
+  margin: 4px 0 7px !important;
+  gap: 7px !important;
+  font-size: 0.78rem !important;
+}
+
+.hg-check-field input {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+.hg-popover-actions,
+.hg-task-popover .hg-popover-actions {
+  gap: 7px !important;
+  margin-top: 8px !important;
+}
+
+.hg-popover-actions .hg-button {
+  min-height: 30px !important;
+  padding: 5px 8px !important;
+  border-radius: 10px !important;
+  font-size: 0.78rem !important;
+  line-height: 1.2 !important;
+}
+
+/* Fix compact task popover date controls: native date icons can overlap the
+   date text when the popover is narrow. Keep the compact layout, but reserve
+   space for the picker glyph. */
+.hg-task-popover input.hg-input[type="date"] {
+  height: 36px !important;
+  min-height: 36px !important;
+  padding-left: 30px !important;
+  padding-right: 8px !important;
+  font-size: 0.76rem !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.hg-task-popover input.hg-input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  left: 8px;
+  margin: 0;
+  opacity: 0.72;
+}
+.hg-task-popover input.hg-input[type="date"] {
+  position: relative !important;
+  box-sizing: border-box !important;
+}
+
+/* Date fields in compact task popover: put the native calendar icon on the
+   right. WebKit date text ignores some left padding, so a left-side indicator
+   can overlap the first digits. */
+.hg-task-popover input.hg-input[type="date"] {
+  padding-left: 12px !important;
+  padding-right: 34px !important;
+  text-align: left !important;
+}
+
+.hg-task-popover input.hg-input[type="date"]::-webkit-calendar-picker-indicator {
+  position: absolute !important;
+  left: auto !important;
+  right: 9px !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0 !important;
+}
+
+/* Fallback: avoid any native date-picker glyph/text collision in Electron. The
+   whole input remains clickable/focusable, so the date picker still works. */
+.hg-task-popover input.hg-input[type="date"].hg-date-no-overlap::-webkit-calendar-picker-indicator {
+  display: none !important;
+}
+
+/* Restore visible date picker icon, but keep it away from the date text.
+   direction: rtl moves WebKit's native calendar indicator to the right;
+   the datetime-edit parts are forced back to ltr so the date reads normally. */
+.hg-task-popover input.hg-input[type="date"],
+.hg-task-popover input.hg-input[type="date"].hg-date-no-overlap {
+  direction: rtl !important;
+  text-align: left !important;
+  padding-left: 12px !important;
+  padding-right: 10px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+}
+
+.hg-task-popover input.hg-input[type="date"]::-webkit-calendar-picker-indicator,
+.hg-task-popover input.hg-input[type="date"].hg-date-no-overlap::-webkit-calendar-picker-indicator {
+  display: block !important;
+  opacity: 0.72 !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin: 0 0 0 8px !important;
+  cursor: pointer !important;
+}
+
+.hg-task-popover input.hg-input[type="date"]::-webkit-datetime-edit,
+.hg-task-popover input.hg-input[type="date"].hg-date-no-overlap::-webkit-datetime-edit {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+.hg-task-popover input.hg-input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+.hg-task-popover input.hg-input[type="date"].hg-date-no-overlap::-webkit-datetime-edit-fields-wrapper {
+  direction: ltr !important;
+}
+
+/* --------------------------------------------------------------------------
+ * Hearth Gantt popovers: align project/task editors with Carrot Home Tasks.
+ * Keep task bars/cards mostly unchanged; normalize the click popovers only.
+ * -------------------------------------------------------------------------- */
+.hg-popover {
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--project-color) 7%, transparent),
+      transparent 42%),
+    color-mix(in srgb, var(--background-primary) 94%, transparent) !important;
+  border-color: color-mix(in srgb, var(--project-color) 42%, var(--background-modifier-border)) !important;
+  box-shadow:
+    0 20px 42px rgba(0,0,0,.20),
+    inset 0 1px 0 rgba(255,255,255,.20) !important;
+}
+
+.hg-popover-header {
+  padding: 0 0 7px !important;
+  margin-bottom: 9px !important;
+  border-bottom: 1px solid color-mix(in srgb, var(--project-color) 26%, var(--background-modifier-border));
+}
+
+.hg-popover-title {
+  position: relative;
+  padding-left: 13px;
+  font-weight: 850 !important;
+  letter-spacing: -0.02em;
+}
+
+.hg-popover-title::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.15em;
+  bottom: 0.15em;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--project-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--project-color) 16%, transparent);
+}
+
+.hg-icon-btn {
+  background: color-mix(in srgb, var(--project-color) 9%, var(--background-modifier-hover)) !important;
+  color: var(--text-normal) !important;
+  border: 1px solid color-mix(in srgb, var(--project-color) 20%, transparent) !important;
+}
+
+.hg-icon-btn:hover {
+  background: color-mix(in srgb, var(--project-color) 18%, var(--background-primary)) !important;
+  border-color: color-mix(in srgb, var(--project-color) 42%, var(--background-modifier-border)) !important;
+  color: var(--project-color) !important;
+}
+
+.hg-field > span,
+.hg-check-field span {
+  color: var(--text-muted);
+  font-weight: 780;
+}
+
+.hg-input {
+  background: color-mix(in srgb, var(--background-secondary) 62%, transparent) !important;
+  border-color: color-mix(in srgb, var(--background-modifier-border) 84%, transparent) !important;
+}
+
+.hg-input:hover {
+  border-color: color-mix(in srgb, var(--project-color) 28%, var(--background-modifier-border)) !important;
+}
+
+.hg-input:focus {
+  border-color: var(--project-color) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--project-color) 18%, transparent) !important;
+}
+
+.hg-task-project-hint {
+  background: color-mix(in srgb, var(--project-color) 10%, var(--background-secondary)) !important;
+  border: 1px solid color-mix(in srgb, var(--project-color) 16%, transparent);
+  color: var(--text-muted) !important;
+}
+
+/* Popover-only buttons (kept out of the topbar so the topbar can follow the
+   Carrot Home card-toolbar language; --project-color is set inline on
+   popovers only). The popover refinement block below still wins here. */
+.hg-popover .hg-button {
+  background: color-mix(in srgb, var(--background-secondary) 58%, transparent) !important;
+  border-color: color-mix(in srgb, var(--project-color) 24%, var(--background-modifier-border)) !important;
+  font-weight: 780;
+}
+
+.hg-popover .hg-button:hover {
+  background: color-mix(in srgb, var(--project-color) 14%, var(--background-primary)) !important;
+  border-color: color-mix(in srgb, var(--project-color) 45%, var(--background-modifier-border)) !important;
+  color: color-mix(in srgb, var(--project-color) 82%, var(--text-normal)) !important;
+}
+
+.hg-popover .hg-primary,
+.hg-popover .hg-popover-actions .hg-primary {
+  background: var(--project-color) !important;
+  border-color: var(--project-color) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.hg-popover .hg-primary:hover,
+.hg-popover .hg-popover-actions .hg-primary:hover {
+  filter: brightness(1.04);
+  color: var(--text-on-accent) !important;
+}
+
+.hg-popover .hg-danger {
+  background: color-mix(in srgb, var(--text-error) 8%, transparent) !important;
+  border-color: color-mix(in srgb, var(--text-error) 34%, var(--background-modifier-border)) !important;
+}
+
+.hg-popover .hg-danger:hover {
+  background: color-mix(in srgb, var(--text-error) 14%, var(--background-primary)) !important;
+  color: var(--text-error) !important;
+}
+
+.hg-color-preset:hover {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--preset-color) 18%, transparent),
+    0 7px 16px rgba(0,0,0,.12) !important;
+}
+
+/* --------------------------------------------------------------------------
+ * Hearth Gantt popover refinement: match Carrot Home Tasks visual language.
+ * Scope is limited to click popovers; right-side task cards/bars are left as-is.
+ * -------------------------------------------------------------------------- */
+.hg-popover {
+  --hg-task-accent: var(--project-color, var(--interactive-accent));
+  --hg-task-tint: color-mix(in srgb, var(--hg-task-accent) 9%, transparent);
+  --hg-task-line: color-mix(in srgb, var(--hg-task-accent) 34%, var(--background-modifier-border));
+  --hg-task-control: color-mix(in srgb, var(--background-secondary) 62%, transparent);
+  --hg-task-control-hover: color-mix(in srgb, var(--hg-task-accent) 14%, var(--background-primary));
+  position: absolute;
+  overflow: hidden;
+}
+
+.hg-popover::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 4px;
+  border-radius: 999px;
+  background: var(--hg-task-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--hg-task-accent) 15%, transparent);
+  pointer-events: none;
+}
+
+.hg-popover-header {
+  margin-left: 8px !important;
+  padding: 1px 0 8px !important;
+  background: linear-gradient(90deg, var(--hg-task-tint), transparent 82%);
+  border-radius: 10px 10px 0 0;
+}
+
+.hg-popover-title {
+  padding-left: 10px !important;
+  color: color-mix(in srgb, var(--hg-task-accent) 24%, var(--text-normal));
+}
+
+.hg-popover-title::before {
+  display: none;
+}
+
+.hg-popover .hg-task-project-hint {
+  margin: 0 0 8px 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--hg-task-accent) 12%, var(--background-secondary)), color-mix(in srgb, var(--background-secondary) 55%, transparent)) !important;
+  border: 1px solid color-mix(in srgb, var(--hg-task-accent) 16%, transparent) !important;
+  font-weight: 720;
+}
+
+.hg-popover .hg-field,
+.hg-popover .hg-check-field {
+  margin-left: 8px;
+}
+
+.hg-popover .hg-field > span,
+.hg-popover .hg-check-field span {
+  color: color-mix(in srgb, var(--hg-task-accent) 20%, var(--text-muted));
+  font-weight: 800;
+}
+
+.hg-popover .hg-input {
+  background: var(--hg-task-control) !important;
+  border-color: color-mix(in srgb, var(--background-modifier-border) 82%, transparent) !important;
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.hg-popover .hg-input:hover {
+  background: color-mix(in srgb, var(--hg-task-accent) 7%, var(--background-primary)) !important;
+  border-color: color-mix(in srgb, var(--hg-task-accent) 28%, var(--background-modifier-border)) !important;
+}
+
+.hg-popover .hg-input:focus {
+  border-color: var(--hg-task-accent) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--hg-task-accent) 18%, transparent) !important;
+  outline: none !important;
+}
+
+.hg-popover .hg-field-grid {
+  margin-left: 8px;
+}
+
+.hg-popover .hg-popover-actions {
+  margin-left: 8px !important;
+  padding-top: 9px;
+  border-top: 1px solid var(--hg-task-line);
+}
+
+.hg-popover .hg-button,
+.hg-popover .hg-icon-btn {
+  border-color: color-mix(in srgb, var(--hg-task-accent) 24%, var(--background-modifier-border)) !important;
+  background: var(--hg-task-control) !important;
+  color: var(--text-normal) !important;
+  font-weight: 780;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.hg-popover .hg-button:hover,
+.hg-popover .hg-icon-btn:hover {
+  border-color: var(--hg-task-line) !important;
+  background: var(--hg-task-control-hover) !important;
+  color: var(--hg-task-accent) !important;
+}
+
+.hg-popover .hg-button:active,
+.hg-popover .hg-icon-btn:active {
+  transform: translateY(1px);
+}
+
+.hg-popover .hg-primary,
+.hg-popover .hg-popover-actions .hg-primary {
+  background: var(--hg-task-accent) !important;
+  border-color: var(--hg-task-accent) !important;
+  color: var(--text-on-accent) !important;
+}
+
+.hg-popover .hg-danger {
+  color: var(--text-error) !important;
+  background: color-mix(in srgb, var(--text-error) 7%, transparent) !important;
+  border-color: color-mix(in srgb, var(--text-error) 34%, var(--background-modifier-border)) !important;
+}
+
+.hg-popover .hg-danger:hover {
+  color: var(--text-error) !important;
+  background: color-mix(in srgb, var(--text-error) 13%, var(--background-primary)) !important;
+}
+
+.hg-popover .hg-color-preset {
+  transition: transform 140ms ease, box-shadow 140ms ease, outline-color 140ms ease;
+}
+
+.hg-popover .hg-color-preset:hover {
+  transform: translateY(-1px);
+}
+
+/* Remove the left vertical accent line from Gantt project/task popovers. */
+.hg-popover::before {
+  content: none !important;
+  display: none !important;
+}
+
+.hg-popover-header,
+.hg-popover .hg-field,
+.hg-popover .hg-check-field,
+.hg-popover .hg-field-grid,
+.hg-popover .hg-popover-actions,
+.hg-popover .hg-task-project-hint {
+  margin-left: 0 !important;
+}
+
+/* Gantt project/task popovers must remain scrollable after visual refinements.
+   The unified style previously set overflow:hidden, which clipped the bottom
+   actions and made them impossible to reach. */
+.hg-popover,
+.hg-popover.hg-task-popover {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.hg-popover .hg-popover-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--background-primary) 94%, transparent) 28%,
+    color-mix(in srgb, var(--background-primary) 96%, transparent)
+  );
+  backdrop-filter: blur(10px);
+  padding-bottom: 1px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Narrow Carrot Home integration                                             */
+/* -------------------------------------------------------------------------- */
+
+/* Touch uses the task editor for date changes. Allow the timeline itself to
+   scroll normally instead of claiming every finger movement as a drag. Mouse
+   and pen dragging are still handled by main.js. */
+.hg-task-bar {
+  touch-action: pan-x pan-y !important;
+}
+
+.hg-task-bar.is-dragging {
+  touch-action: none !important;
+}
+
+.hg-task-bar.is-saving {
+  cursor: progress;
+  opacity: .88;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--project-color) 34%, transparent),
+    0 8px 18px color-mix(in srgb, var(--background-modifier-box-shadow) 60%, transparent);
+}
+
+.hg-task-due-marker {
+  position: absolute;
+  z-index: 4;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border: 2px solid color-mix(in srgb, var(--project-color) 72%, var(--text-normal));
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--project-color) 86%, var(--background-primary));
+  transform: rotate(45deg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--background-primary) 75%, transparent);
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: pan-x pan-y;
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+.hg-task-due-marker:hover {
+  transform: rotate(45deg) scale(1.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--project-color) 24%, transparent);
+}
+.hg-task-due-marker:focus-visible {
+  outline: 2px solid var(--project-color);
+  outline-offset: 4px;
+}
+
+.hg-task-due-marker.is-dragging {
+  z-index: 8;
+  cursor: grabbing;
+  touch-action: none;
+  transform: rotate(45deg) scale(1.24);
+}
+
+.hg-task-due-marker.is-saving {
+  cursor: progress;
+  opacity: .7;
+}
+
+.hearth-gantt-view.is-compact-entry {
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+}
+
+.hg-compact-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 24px);
+  min-height: 92px;
+  margin: 12px;
+  padding: 16px 18px;
+  appearance: none;
+  text-align: left;
+  color: var(--text-normal);
+  cursor: pointer;
+  box-shadow: none;
+  border: 1px solid color-mix(in srgb, var(--hg-accent) 22%, var(--background-modifier-border));
+  border-radius: 14px;
+  background: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--hg-accent) 10%, transparent),
+    color-mix(in srgb, var(--background-primary) 64%, transparent)
+  );
+}
+
+.hg-compact-entry-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--hg-accent) 15%, var(--background-primary));
+  color: var(--hg-accent);
+  font-size: 1.45rem;
+  font-weight: 800;
+}
+
+.hg-compact-entry-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hg-compact-entry-title {
+  margin-bottom: 3px;
+  color: var(--text-normal);
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.hg-compact-entry-desc {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+@container carrot-dashboard (max-width: 720px) {
+  .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head .hg-actions {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head .hg-button {
+    min-height: 34px;
+    padding-inline: 9px;
+  }
+}
+
+/* TaskNotes-compatible multi-project selector. */
+.hg-project-multi-field {
+  gap: 8px;
+}
+
+.hg-project-multi-list {
+  display: grid;
+  gap: 5px;
+  max-height: 190px;
+  padding: 7px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--hg-accent) 20%, var(--background-modifier-border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--background-primary) 70%, transparent);
+}
+
+.hg-project-choice {
+  display: grid;
+  grid-template-columns: auto 10px minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 4px 7px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.hg-project-choice:hover {
+  background: color-mix(in srgb, var(--hg-accent) 9%, transparent);
+}
+
+.hg-project-choice > input {
+  margin: 0;
+}
+
+.hg-project-choice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--project-color, var(--hg-accent));
+}
+
+.hg-project-choice-title {
+  min-width: 0;
+  color: var(--text-normal);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.hg-project-choice-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: .75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hg-project-choice-empty {
+  padding: 8px;
+  color: var(--text-muted);
+  font-size: .8rem;
+  text-align: center;
+}
+
+.hg-project-note-picker {
+  justify-self: start;
+}
+
+/* --------------------------------------------------------------------------
+ * Carrot Gantt final responsive layer
+ * -------------------------------------------------------------------------- */
+
+/* Sticky dates must paint above bars and due diamonds while scrolling, but the
+   previous 96% opaque form-field fill looked like a foreign white table pasted
+   into Carrot Home. Use the same glass + accent language as Home card headers:
+   a softly tinted translucent surface with backdrop blur. The 78% surface is
+   still strong enough to mask task colours, and both halves remain identical. */
+.hg-label-header,
+.hg-time-header {
+  border-bottom-color: color-mix(in srgb, var(--hg-accent) 28%, var(--hg-line)) !important;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--hg-accent) 9%, transparent),
+      transparent 72%
+    ),
+    color-mix(
+      in srgb,
+      var(--background-modifier-form-field, var(--color-base-00, #fff)) 78%,
+      transparent
+    ) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(1.08) !important;
+  backdrop-filter: blur(16px) saturate(1.08) !important;
+}
+
+.hg-time-header > .hg-day {
+  border-right-color: color-mix(
+    in srgb,
+    var(--hg-accent) 12%,
+    var(--background-modifier-border) 58%
+  );
+}
+
+.hg-time-header {
+  z-index: 30 !important;
+  isolation: isolate;
+  box-shadow: none;
+}
+
+.hg-task-due-marker,
+.hg-task-due-marker.is-dragging {
+  z-index: 4;
+}
+
+/* One control language for the card toolbar and each project's add button. */
+.hg-topbar .hg-button,
+.hg-project-label .hg-add-task-btn,
+.hg-project-label .hg-archive-project-btn {
+  min-height: 34px;
+  border-radius: 10px !important;
+  border: 1px solid color-mix(in srgb, var(--hg-accent) 24%, var(--background-modifier-border)) !important;
+  background: color-mix(in srgb, var(--background-secondary) 58%, transparent) !important;
+  color: var(--text-normal) !important;
+  box-shadow: none !important;
+  font-weight: 720;
+  line-height: 1;
+}
+
+.hg-topbar .hg-button:hover,
+.hg-project-label .hg-add-task-btn:hover,
+.hg-project-label .hg-archive-project-btn:hover {
+  border-color: color-mix(in srgb, var(--hg-accent) 48%, var(--background-modifier-border)) !important;
+  background: color-mix(in srgb, var(--hg-accent) 13%, var(--background-primary)) !important;
+  color: color-mix(in srgb, var(--hg-accent) 84%, var(--text-normal)) !important;
+}
+
+.hg-project-label .hg-add-task-btn,
+.hg-project-label .hg-archive-project-btn {
+  min-height: 30px;
+  margin-top: 3px;
+  padding: 5px 10px !important;
+  border-color: color-mix(in srgb, var(--project-color) 38%, var(--background-modifier-border)) !important;
+  background: color-mix(in srgb, var(--project-color) 10%, var(--background-primary)) !important;
+  font-size: .72rem;
+}
+
+.hg-topbar .hg-primary {
+  border-color: var(--hg-accent) !important;
+  background: var(--hg-accent) !important;
+  color: var(--text-on-accent) !important;
+}
+
+/* The action footer is part of the scroll flow. A sticky translucent footer
+   painted over fields beneath it and produced the reported "ghost" text. */
+.hg-popover .hg-popover-actions,
+.hg-task-popover .hg-popover-actions {
+  position: static !important;
+  inset: auto !important;
+  z-index: auto !important;
+  background: transparent !important;
+  backdrop-filter: none !important;
+  padding-bottom: 0 !important;
+}
+
+/* Compact circular project palette. */
+.hg-popover .hg-color-preset-field {
+  gap: 5px !important;
+}
+
+.hg-popover .hg-color-presets {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 7px !important;
+  padding: 2px 1px 3px !important;
+}
+
+.hg-popover .hg-color-preset {
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  min-height: 22px !important;
+  flex: 0 0 22px !important;
+  border-radius: 50% !important;
+  border-width: 1px !important;
+}
+
+.hg-popover .hg-color-preset.is-selected {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--preset-color) 22%, transparent) !important;
+}
+
+.hg-popover .hg-color-preset.is-selected::after {
+  font-size: .62rem !important;
+}
+
+/* Project editor: associated tasks appear as a compact, readable list. */
+.hg-project-task-field {
+  gap: 6px !important;
+}
+
+.hg-project-task-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hg-project-task-count {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--project-color) 12%, transparent);
+  color: color-mix(in srgb, var(--project-color) 72%, var(--text-muted));
+  font-size: .68rem;
+}
+
+.hg-project-task-list {
+  display: grid;
+  gap: 3px;
+  max-height: 150px;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--project-color) 18%, var(--background-modifier-border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--background-primary) 68%, transparent);
+}
+
+.hg-project-task-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  color: var(--text-normal);
+  font-weight: 620;
+}
+
+.hg-project-task-row:nth-child(odd) {
+  background: color-mix(in srgb, var(--project-color) 5%, transparent);
+}
+
+.hg-project-task-row.is-done {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.hg-project-task-state {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid color-mix(in srgb, var(--project-color) 54%, var(--background-modifier-border));
+  border-radius: 5px;
+  color: var(--text-on-accent);
+  background: color-mix(in srgb, var(--project-color) 10%, transparent);
+  font-size: .65rem;
+  text-decoration: none;
+}
+
+.hg-project-task-row.is-done .hg-project-task-state {
+  border-color: var(--project-color);
+  background: var(--project-color);
+}
+
+.hg-project-task-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hg-project-task-date {
+  color: var(--text-muted);
+  font-size: .68rem;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.hg-project-task-empty {
+  padding: 9px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Task editor: projects are summarized in one row and expanded on demand. */
+.hg-project-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--project-color) 20%, var(--background-modifier-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background-secondary) 58%, transparent);
+  color: var(--text-normal);
+  text-align: left;
+  cursor: pointer;
+}
+
+.hg-project-summary-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hg-project-summary-chevron {
+  transition: transform 140ms ease;
+}
+
+.hg-project-summary.is-expanded .hg-project-summary-chevron {
+  transform: rotate(180deg);
+}
+
+.hg-project-multi-panel[hidden] {
+  display: none !important;
+}
+
+.hg-project-multi-panel {
+  display: grid;
+  gap: 7px;
+}
+
+/* Narrow/mobile mode still renders the chart. The label column remains useful,
+   while the timeline becomes a natural horizontal touch scroller. */
+.hearth-gantt-view.is-mobile-narrow {
+  min-height: 340px;
+  overflow: hidden;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-topbar {
+  flex: 0 0 auto;
+  padding: 7px 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-topbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-actions {
+  width: max-content;
+  min-width: 100%;
+  margin-left: 0 !important;
+  justify-content: flex-start !important;
+  flex-wrap: nowrap;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-board {
+  grid-template-columns: 118px minmax(0, 1fr) !important;
+  min-height: 280px;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-label-header {
+  padding-inline: 8px;
+  font-size: .68rem;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-project-label {
+  min-height: 0 !important;
+  padding: 8px !important;
+  gap: 3px;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-project-name-line {
+  gap: 5px;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-project-name {
+  font-size: .78rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-status {
+  padding-inline: 4px;
+  font-size: .58rem;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-project-meta {
+  margin-top: 2px !important;
+  font-size: .6rem;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-project-progress {
+  width: 82%;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-add-task-btn,
+.hearth-gantt-view.is-mobile-narrow .hg-archive-project-btn {
+  min-height: 29px;
+  padding: 4px 8px !important;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-timeline-pane {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+}
+
+.hearth-gantt-view.is-mobile-narrow .hg-bar-title {
+  padding-inline: 9px 18px;
+  font-size: .68rem;
+}
+
+@container carrot-dashboard (max-width: 720px) {
+  .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head {
+    max-width: 72% !important;
+    overflow-x: auto !important;
+    scrollbar-width: none;
+  }
+
+  .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head .hg-actions {
+    width: max-content;
+    flex-wrap: nowrap !important;
+    gap: 6px;
+  }
+
+  .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head .hg-button {
+    min-width: max-content;
+    min-height: 36px;
+  }
+}
+
+@media (max-width: 520px) {
+  .hg-popover,
+  .hg-popover.hg-task-popover {
+    padding: 11px !important;
+    border-radius: 16px !important;
+  }
+
+  .hg-popover .hg-field-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .hg-popover .hg-popover-actions,
+  .hg-task-popover .hg-popover-actions {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .hg-popover .hg-popover-actions .hg-primary,
+  .hg-task-popover .hg-popover-actions .hg-primary {
+    grid-column: 1 / -1 !important;
+  }
+
+  .hg-project-choice {
+    grid-template-columns: auto 9px minmax(0, 1fr) !important;
+  }
+
+  .hg-project-choice-path {
+    display: none;
+  }
+}
+
+/* Mobile portrait: the standalone view keeps the real chart, but its controls
+   must fit the available width instead of beginning off-screen in a horizontal
+   button strip. Landscape/wider panes never receive is-mobile-narrow and keep
+   the desktop toolbar unchanged. */
+.hearth-gantt-view.is-mobile-narrow:not(.is-compact-entry) .hg-topbar {
+  padding: 7px 8px;
+  overflow: visible;
+}
+
+.hearth-gantt-view.is-mobile-narrow:not(.is-compact-entry) .hg-actions {
+  display: grid !important;
+  grid-template-columns: 42px 42px minmax(56px, .8fr) minmax(64px, 1fr) minmax(48px, .72fr);
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.hearth-gantt-view.is-mobile-narrow:not(.is-compact-entry) .hg-actions > .hg-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  padding: 6px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* In a narrow Carrot Home card the full chart is intentionally replaced by a
+   lightweight launcher. Keep only one clear header action, so neither the card
+   title nor controls are truncated. */
+.hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head.hg-compact-entry-toolbar {
+  width: auto !important;
+  max-width: none !important;
+  overflow: visible !important;
+  flex: 0 0 auto !important;
+}
+
+.hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head.hg-compact-entry-toolbar .hg-actions {
+  width: auto !important;
+  min-width: 0 !important;
+  margin-left: 8px !important;
+  gap: 0 !important;
+}
+
+.hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head.hg-compact-entry-toolbar .hg-compact-open-btn {
+  min-width: 56px !important;
+  min-height: 34px !important;
+  padding-inline: 12px !important;
+}
+
+.hearth-gantt-view.is-compact-entry .hg-compact-entry:hover,
+.hearth-gantt-view.is-compact-entry .hg-compact-entry:focus-visible {
+  border-color: color-mix(in srgb, var(--hg-accent) 46%, var(--background-modifier-border));
+  background: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--hg-accent) 16%, transparent),
+    color-mix(in srgb, var(--background-primary) 74%, transparent)
+  );
+  outline: none;
+}
+
+/* Carrot Home / portrait launcher -------------------------------------------------
+   In Android Obsidian an embedded workspace leaf can remain a zero-height flex
+   item and paint its children near the bottom of the card. Obsidian removes
+   foreign children from both the card body and leaf host, so the launcher stays
+   in its legitimate view. Stable classes on the card/body let us size the whole
+   embedded chain without :has(), which also supports older mobile WebViews. */
+.hearth-card.has-gantt-compact-entry {
+  height: 173px !important;
+  min-height: 173px !important;
+  max-height: 173px !important;
+}
+
+.hearth-card.has-gantt-compact-entry > .hearth-card-body.hg-compact-entry-body {
+  display: flex !important;
+  flex: 0 0 116px !important;
+  box-sizing: border-box;
+  height: 116px !important;
+  min-height: 116px !important;
+  max-height: 116px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.hearth-card.has-gantt-compact-entry > .hearth-card-body.hg-compact-entry-body > .hearth-leaf-host,
+.hearth-card.has-gantt-compact-entry > .hearth-card-body.hg-compact-entry-body > .hearth-leaf-host > .workspace-leaf,
+.hearth-card.has-gantt-compact-entry > .hearth-card-body.hg-compact-entry-body > .hearth-leaf-host > .workspace-leaf > .workspace-leaf-content,
+.hearth-card.has-gantt-compact-entry > .hearth-card-body.hg-compact-entry-body .view-content,
+.hearth-card.has-gantt-compact-entry > .hearth-card-body.hg-compact-entry-body .hearth-gantt-view.is-compact-entry {
+  display: flex !important;
+  flex: 0 0 100% !important;
+  box-sizing: border-box;
+  width: 100% !important;
+  height: 116px !important;
+  min-height: 116px !important;
+  max-height: 116px !important;
+  overflow: hidden !important;
+}
+
+.hearth-card.has-gantt-compact-entry > .hearth-card-body.hg-compact-entry-body .view-content {
+  padding: 0 !important;
+}
+
+.hearth-card.has-gantt-compact-entry .hearth-gantt-view.is-compact-entry > .hg-compact-entry {
+  display: flex !important;
+  position: static !important;
+  width: calc(100% - 24px) !important;
+  height: 92px !important;
+  min-height: 92px !important;
+  margin: 12px !important;
+}
+
+.hearth-card.has-gantt-compact-entry .hearth-gantt-view.is-compact-entry > .hg-compact-entry:hover,
+.hearth-card.has-gantt-compact-entry .hearth-gantt-view.is-compact-entry > .hg-compact-entry:focus-visible {
+  border-color: color-mix(in srgb, var(--hg-accent) 46%, var(--background-modifier-border));
+  background: linear-gradient(
+    115deg,
+    color-mix(in srgb, var(--hg-accent) 16%, transparent),
+    color-mix(in srgb, var(--background-primary) 74%, transparent)
+  );
+  outline: none;
+}
+
+/* --------------------------------------------------------------------------
+ * Project column layout — final override
+ * --------------------------------------------------------------------------
+ * Older polish layers used several competing padding/min-height values. Keep
+ * one deterministic four-row layout so metadata never sits underneath the
+ * progress bar or gets cropped at larger interface font sizes. */
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-board {
+  grid-template-columns: 240px minmax(0, 1fr) !important;
+}
+
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-label {
+  min-height: 104px !important;
+  padding: 12px 14px !important;
+  justify-content: flex-start !important;
+  gap: 6px !important;
+}
+
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-track {
+  min-height: 104px !important;
+}
+
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-name-line {
+  flex: 0 0 22px;
+  width: 100%;
+  gap: 8px;
+}
+
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-name {
+  font-size: .86rem;
+  line-height: 1.25;
+}
+
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-meta-row {
+  flex: 0 0 auto;
+  width: 100%;
+  gap: 8px;
+}
+
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 1.25;
+}
+
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-progress {
+  flex: 0 0 72px;
+  width: 72px;
+  height: 4px;
+  margin: 0;
+}
+
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-label .hg-add-task-btn,
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-label .hg-archive-project-btn {
+  flex: 0 0 auto;
+  min-height: 27px;
+  margin-top: 1px;
+  padding: 4px 10px !important;
+}
+
+/* --------------------------------------------------------------------------
+ * Notion-style calendar header + explicit project/task ordering
+ * -------------------------------------------------------------------------- */
+.hg-label-header,
+.hg-time-header {
+  height: 50px !important;
+  min-height: 50px;
+  flex: 0 0 50px !important;
+  box-sizing: border-box;
+}
+
+.hg-time-header {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.hg-month-row,
+.hg-day-row {
+  display: flex;
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: max-content;
+}
+
+.hg-month-row {
+  height: 20px;
+  box-sizing: border-box;
+  border-bottom: 1px solid color-mix(in srgb, var(--hg-accent) 10%, var(--background-modifier-border) 45%);
+}
+
+.hg-month-segment {
+  height: 20px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  box-sizing: border-box;
+  border-right: 1px solid color-mix(in srgb, var(--hg-accent) 18%, var(--background-modifier-border));
+  color: var(--text-normal);
+}
+
+.hg-month-label {
+  width: var(--cell-width, 72px);
+  max-width: 100%;
+  padding: 0 6px;
+  box-sizing: border-box;
+  font-size: .68rem;
+  font-weight: 820;
+  line-height: 20px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.hg-day-row {
+  height: 29px;
+}
+
+.hg-day-row > .hg-day {
+  height: 29px;
+  flex-direction: row;
+  border-right-color: color-mix(in srgb, var(--hg-accent) 12%, var(--background-modifier-border) 58%);
+  font-size: .7rem;
+  line-height: 1;
+}
+
+.hg-day-row .hg-day-num {
+  display: inline-flex;
+  min-width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+}
+
+.hg-day-row .hg-day.is-today .hg-day-num {
+  background: var(--hg-accent);
+  color: var(--text-on-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--hg-accent) 14%, transparent);
+}
+
+.hg-project-order-handle,
+.hg-task-order-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.hg-project-order-handle {
+  width: 16px;
+  height: 22px;
+  flex: 0 0 16px;
+  margin-left: -5px;
+  border-radius: 5px;
+  opacity: .62;
+}
+
+.hg-project-order-handle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.hg-project-order-handle:hover,
+.hg-project-order-handle:focus-visible,
+.hg-task-order-handle:hover,
+.hg-task-order-handle:focus-visible {
+  color: var(--project-color, var(--hg-accent));
+  background: color-mix(in srgb, var(--project-color, var(--hg-accent)) 13%, transparent);
+  outline: none;
+}
+
+.hg-project-label.is-project-order-dragging,
+.hg-task-bar.is-task-order-dragging {
+  opacity: .5;
+}
+
+.hg-project-label.is-project-order-before {
+  box-shadow: inset 0 3px 0 var(--hg-accent);
+}
+
+.hg-project-label.is-project-order-after {
+  box-shadow: inset 0 -3px 0 var(--hg-accent);
+}
+
+.hg-task-order-handle {
+  position: absolute;
+  z-index: 7;
+  top: 50%;
+  right: 3px;
+  width: 20px;
+  height: 24px;
+  transform: translateY(-50%);
+  border-radius: 6px;
+  color: color-mix(in srgb, var(--project-color) 55%, var(--text-muted));
+}
+
+.hg-task-order-handle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.hearth-gantt-view.is-task-sort-manual .hg-task-bar .hg-bar-title {
+  padding-right: 27px;
+}
+
+.hg-task-bar.is-task-order-before {
+  box-shadow: 0 -4px 0 -1px var(--project-color), 0 6px 14px rgba(0, 0, 0, .10);
+}
+
+.hg-task-bar.is-task-order-after {
+  box-shadow: 0 4px 0 -1px var(--project-color), 0 6px 14px rgba(0, 0, 0, .10);
+}
+
+.hg-task-order-drop-line {
+  position: absolute;
+  z-index: 8;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--project-color, var(--hg-accent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--project-color, var(--hg-accent)) 24%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) scaleX(.985);
+  transition: opacity 80ms ease;
+}
+
+.hg-task-order-drop-line.is-visible {
+  opacity: .92;
+}
+
+/* --------------------------------------------------------------------------
+ * Carrot Home colour + interaction alignment
+ * --------------------------------------------------------------------------
+ * Carrot Home uses a solid card surface at rest and
+ * --background-modifier-hover for a clearly readable hover step. Earlier
+ * Gantt layers mixed project colours into transparent at only 3–8%, which
+ * made the whole chart look washed out beside the other Home cards. Keep the
+ * same glass language, but give rows, bars and controls one stronger step of
+ * contrast and use the project colour only as the local accent. */
+.hearth-gantt-view {
+  --hg-home-surface: var(--hearth-card-surface, var(--background-primary));
+  --hg-home-shadow: color-mix(in srgb, var(--background-modifier-box-shadow, #000) 12%, transparent);
+}
+
+.hearth-gantt-view .hg-label-pane {
+  background: color-mix(in srgb, var(--background-secondary) 70%, var(--background-primary));
+}
+
+.hearth-gantt-view .hg-label-header,
+.hearth-gantt-view .hg-time-header {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--hg-accent) 11%, transparent), transparent 72%),
+    color-mix(in srgb, var(--hg-home-surface) 94%, transparent) !important;
+  border-bottom-color: color-mix(in srgb, var(--hg-accent) 34%, var(--background-modifier-border)) !important;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--background-modifier-box-shadow, #000) 6%, transparent);
+}
+
+.hearth-gantt-view .hg-month-row {
+  border-bottom-color: color-mix(in srgb, var(--hg-accent) 16%, var(--background-modifier-border) 66%);
+}
+
+.hearth-gantt-view .hg-day-row > .hg-day {
+  color: color-mix(in srgb, var(--text-muted) 84%, var(--text-normal));
+}
+
+.hearth-gantt-view .hg-day-row > .hg-day:hover {
+  background: color-mix(in srgb, var(--hg-accent) 15%, var(--hg-home-surface));
+  color: var(--text-normal);
+}
+
+.hearth-gantt-view .hg-project-label {
+  background:
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--project-color) 12%, var(--hg-home-surface)),
+      color-mix(in srgb, var(--project-color) 5%, var(--hg-home-surface)) 76%,
+      var(--hg-home-surface));
+  border-bottom-color: color-mix(in srgb, var(--project-color) 16%, var(--background-modifier-border));
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--project-color) 68%, transparent);
+  transition: background 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.hearth-gantt-view .hg-track {
+  background-color: color-mix(in srgb, var(--background-secondary) 13%, var(--hg-home-surface));
+  border-bottom-color: color-mix(in srgb, var(--background-modifier-border) 72%, transparent);
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.hearth-gantt-view .hg-project-label:hover,
+.hearth-gantt-view .hg-project-label.is-row-hover {
+  background:
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--project-color) 24%, var(--hg-home-surface)),
+      color-mix(in srgb, var(--project-color) 15%, var(--hg-home-surface)) 78%,
+      color-mix(in srgb, var(--project-color) 9%, var(--hg-home-surface)));
+  border-bottom-color: color-mix(in srgb, var(--project-color) 40%, var(--background-modifier-border));
+  box-shadow:
+    inset 4px 0 0 var(--project-color),
+    inset 0 1px 0 color-mix(in srgb, var(--project-color) 20%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--project-color) 20%, transparent);
+}
+
+.hearth-gantt-view .hg-track:hover,
+.hearth-gantt-view .hg-track.is-row-hover {
+  background-color: color-mix(in srgb, var(--project-color, var(--hg-accent)) 13%, var(--hg-home-surface));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--project-color, var(--hg-accent)) 18%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--project-color, var(--hg-accent)) 18%, transparent);
+}
+
+.hearth-gantt-view .hg-color-dot {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--project-color) 22%, transparent);
+}
+
+.hearth-gantt-view .hg-status {
+  color: color-mix(in srgb, var(--project-color) 82%, var(--text-normal));
+  background: color-mix(in srgb, var(--project-color) 17%, var(--background-primary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--project-color) 22%, transparent);
+}
+
+.hearth-gantt-view .hg-project-progress {
+  background: color-mix(in srgb, var(--project-color) 18%, var(--background-modifier-border));
+}
+
+.hearth-gantt-view .hg-bar {
+  background: color-mix(in srgb, var(--project-color) 12%, var(--hg-home-surface));
+  border-color: color-mix(in srgb, var(--project-color) 66%, var(--background-modifier-border));
+  box-shadow: 0 2px 8px var(--hg-home-shadow);
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.hearth-gantt-view .hg-bar-progress {
+  background: color-mix(in srgb, var(--project-color) 48%, var(--background-primary));
+  transition: background 120ms ease;
+}
+
+.hearth-gantt-view .hg-bar:hover,
+.hearth-gantt-view .hg-bar:focus-visible {
+  background: color-mix(in srgb, var(--project-color) 26%, var(--hg-home-surface));
+  border-color: color-mix(in srgb, var(--project-color) 88%, var(--background-modifier-border));
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--project-color) 20%, transparent);
+  transform: translateY(-1px);
+}
+
+.hearth-gantt-view .hg-bar:hover .hg-bar-progress,
+.hearth-gantt-view .hg-bar:focus-visible .hg-bar-progress {
+  background: color-mix(in srgb, var(--project-color) 58%, var(--background-primary));
+}
+
+.hearth-gantt-view .hg-task-bar.is-done {
+  background:
+    repeating-linear-gradient(135deg, color-mix(in srgb, var(--text-muted) 12%, transparent) 0 6px, transparent 6px 12px),
+    color-mix(in srgb, var(--project-color) 15%, var(--hg-home-surface));
+  border-color: color-mix(in srgb, var(--project-color) 36%, var(--background-modifier-border));
+}
+
+.hearth-gantt-view .hg-task-bar.is-done:hover,
+.hearth-gantt-view .hg-task-bar.is-done:focus-visible {
+  background:
+    repeating-linear-gradient(135deg, color-mix(in srgb, var(--text-muted) 12%, transparent) 0 6px, transparent 6px 12px),
+    color-mix(in srgb, var(--project-color) 23%, var(--hg-home-surface));
+  border-color: color-mix(in srgb, var(--project-color) 58%, var(--background-modifier-border));
+}
+
+.hearth-gantt-view .hg-project-label .hg-add-task-btn,
+.hearth-gantt-view .hg-project-label .hg-archive-project-btn,
+.hg-topbar .hg-button {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 22%, transparent) !important;
+}
+
+.hearth-gantt-view .hg-project-label .hg-add-task-btn:hover,
+.hearth-gantt-view .hg-project-label .hg-add-task-btn:focus-visible,
+.hearth-gantt-view .hg-project-label .hg-archive-project-btn:hover,
+.hearth-gantt-view .hg-project-label .hg-archive-project-btn:focus-visible {
+  border-color: color-mix(in srgb, var(--project-color) 64%, var(--background-modifier-border)) !important;
+  background: color-mix(in srgb, var(--project-color) 24%, var(--hg-home-surface)) !important;
+  color: color-mix(in srgb, var(--project-color) 86%, var(--text-normal)) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--project-color) 12%, transparent),
+    0 3px 10px color-mix(in srgb, var(--project-color) 12%, transparent) !important;
+}
+
+.hg-topbar .hg-button:hover,
+.hg-topbar .hg-button:focus-visible {
+  border-color: color-mix(in srgb, var(--hg-accent) 60%, var(--background-modifier-border)) !important;
+  background: color-mix(in srgb, var(--hg-accent) 21%, var(--background-primary)) !important;
+  color: color-mix(in srgb, var(--hg-accent) 88%, var(--text-normal)) !important;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--hg-accent) 10%, transparent),
+    0 3px 10px color-mix(in srgb, var(--hg-accent) 11%, transparent) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hearth-gantt-view .hg-project-label,
+  .hearth-gantt-view .hg-track,
+  .hearth-gantt-view .hg-bar {
+    transition: none;
+  }
+}
+
+/* TaskNotes-backed project identity + creation dialog. */
+.hg-project-kind {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--project-color) 74%, var(--text-muted));
+}
+
+.hg-project-kind svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+}
+
+.carrot-gantt-project-create-modal .modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(720px, calc(100vh - 120px));
+  overflow-y: auto;
+  container-type: inline-size;
+}
+
+.carrot-gantt-project-create-modal {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-desc {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--interactive-accent) 9%, var(--background-primary));
+  color: var(--text-muted);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-field {
+  margin: 0;
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-grid .hg-field,
+.carrot-gantt-project-create-modal .hg-project-create-color-field,
+.carrot-gantt-project-create-modal .hg-project-create-notes-field {
+  margin: 0;
+}
+
+.carrot-gantt-project-create-modal .hg-project-task-time {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--background-secondary) 72%, transparent);
+}
+
+.carrot-gantt-project-create-modal .hg-project-task-time-title {
+  color: var(--text-normal);
+  font-size: .8rem;
+  font-weight: 780;
+}
+
+.carrot-gantt-project-create-modal .hg-project-task-time-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.carrot-gantt-project-create-modal .hg-project-task-time-grid .hg-field {
+  min-width: 0;
+  margin: 0 !important;
+}
+
+.carrot-gantt-project-create-modal input.hg-project-date-input[type="date"] {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding: 5px 9px !important;
+  font-size: .76rem !important;
+  line-height: normal !important;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box !important;
+}
+
+.carrot-gantt-project-create-modal .hg-project-date-control {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.carrot-gantt-project-create-modal input.hg-project-date-input[type="date"] {
+  direction: ltr !important;
+  text-align: left !important;
+  padding-right: 34px !important;
+  appearance: none !important;
+}
+
+.carrot-gantt-project-create-modal input.hg-project-date-input[type="date"]::-webkit-datetime-edit,
+.carrot-gantt-project-create-modal input.hg-project-date-input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+  direction: ltr !important;
+  text-align: left !important;
+}
+
+.carrot-gantt-project-create-modal input.hg-project-date-input[type="date"]::-webkit-calendar-picker-indicator {
+  display: none !important;
+}
+
+.carrot-gantt-project-create-modal .hg-project-date-picker {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  z-index: 1;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  transform: translateY(-50%);
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.carrot-gantt-project-create-modal .hg-project-date-picker:hover,
+.carrot-gantt-project-create-modal .hg-project-date-picker:focus-visible {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.carrot-gantt-project-create-modal .hg-project-date-picker svg {
+  width: 14px;
+  height: 14px;
+}
+
+.carrot-gantt-project-create-modal .hg-project-task-time-hint {
+  color: var(--text-muted);
+  font-size: .69rem;
+  line-height: 1.45;
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-color-field {
+  padding-inline: 3px;
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 5px 4px 6px;
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-color {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  padding: 0;
+  border: 2px solid var(--background-primary);
+  border-radius: 50%;
+  outline: none;
+  background: var(--preset-color);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--preset-color) 48%, var(--background-modifier-border));
+  cursor: pointer;
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-color.is-selected {
+  box-shadow:
+    0 0 0 2px var(--background-primary),
+    0 0 0 4px color-mix(in srgb, var(--preset-color) 82%, var(--text-normal));
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-color:focus-visible {
+  box-shadow:
+    0 0 0 2px var(--background-primary),
+    0 0 0 4px var(--interactive-accent);
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-notes-field textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.carrot-gantt-project-create-modal .hg-project-video-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: var(--background-secondary);
+  cursor: pointer;
+}
+
+.carrot-gantt-project-create-modal .hg-project-video-checkbox {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+}
+
+.carrot-gantt-project-create-modal .hg-project-video-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.carrot-gantt-project-create-modal .hg-project-video-title {
+  color: var(--text-normal);
+  font-size: .84rem;
+  font-weight: 750;
+}
+
+.carrot-gantt-project-create-modal .hg-project-video-desc {
+  color: var(--text-muted);
+  font-size: .74rem;
+  line-height: 1.45;
+}
+
+.carrot-gantt-project-create-modal .hg-project-create-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  margin: 0 !important;
+}
+
+.carrot-gantt-project-create-modal .hg-button {
+  min-height: 34px;
+  padding: 6px 13px;
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 24%, var(--background-modifier-border));
+  border-radius: 10px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.carrot-gantt-project-create-modal .hg-button:hover,
+.carrot-gantt-project-create-modal .hg-button:focus-visible {
+  border-color: color-mix(in srgb, var(--interactive-accent) 58%, var(--background-modifier-border));
+  background: color-mix(in srgb, var(--interactive-accent) 17%, var(--background-primary));
+}
+
+.carrot-gantt-project-create-modal .hg-primary {
+  border-color: var(--interactive-accent);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.hg-topbar .hg-choose-project-btn {
+  min-width: max-content;
+  padding-inline: 10px !important;
+  font-size: var(--font-ui-smaller);
+  font-weight: 700;
+}
+
+@media (max-width: 560px) {
+  .carrot-gantt-project-create-modal .hg-project-create-grid,
+  .carrot-gantt-project-create-modal .hg-project-task-time-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 500px) {
+  .carrot-gantt-project-create-modal .hg-project-create-grid,
+  .carrot-gantt-project-create-modal .hg-project-task-time-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Workflow previews wrap both stage names and full vault-relative paths. */
+.carrot-gantt-project-create-modal .hg-workflow-preview {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--font-ui-small);
+  line-height: 1.65;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.carrot-gantt-project-create-modal .hg-project-video-field[hidden] { display: none; }
+.carrot-gantt-project-create-modal .hg-popover-actions { flex-wrap: wrap; }
+.hg-unscheduled-task {
+  position: absolute;
+  left: 8px;
+  max-width: min(320px, calc(100% - 16px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+/* Archived projects: one collapsed group at the bottom of the chart. */
+.hg-track.is-archived { opacity: 0.72; }
+.hg-archived-group {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-top: 1px dashed color-mix(in srgb, var(--background-modifier-border) 90%, transparent);
+  background: color-mix(in srgb, var(--background-secondary) 55%, transparent);
+}
+.hg-archived-toggle {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.hg-archived-toggle:hover,
+.hg-archived-toggle:focus-visible { color: var(--text-normal); }
+.hg-archived-group-track {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-top: 1px dashed color-mix(in srgb, var(--background-modifier-border) 90%, transparent);
+  background: color-mix(in srgb, var(--background-secondary) 45%, transparent);
+  cursor: pointer;
+}
+.hg-archived-group-hint {
+  color: var(--text-faint);
+  font-size: 0.7rem;
+}
+.hg-project-label .hg-archive-project-btn {
+  flex: 0 0 auto;
+  align-self: center;
+  width: auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+/* One action line per project row: the add-task key sits on the left, the archive
+   key is pushed to the far right edge of the card. They must never stack. */
+.hg-project-label .hg-project-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 3px;
+}
+.hg-project-label .hg-project-actions .hg-add-task-btn,
+.hg-project-label .hg-project-actions .hg-archive-project-btn {
+  margin-top: 0 !important;
+}
+.hg-project-label .hg-project-actions .hg-archive-project-btn {
+  margin-left: auto;
+}
+.hg-archived-badge {
+  flex: 0 0 auto;
+  order: 2;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--project-color) 82%, var(--text-normal));
+  background: color-mix(in srgb, var(--project-color) 17%, var(--background-primary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--project-color) 22%, transparent);
+}
+
+/* Archived rows are storage, not work surfaces: a fixed 64px two-line card —
+   line 1 is the full name row (badge + count), line 2 puts the date/progress
+   text on the left and the unarchive key on the right edge. A single 36px line
+   squeezed the project name down to zero width on 240px cards. The 82px/104px
+   min-height floors from the polish layers must not apply to them. */
+.hearth-gantt-view .hg-project-label.is-archived,
+.hearth-gantt-view .hg-track.is-archived {
+  min-height: 0 !important;
+}
+.hearth-gantt-view .hg-project-label.is-archived {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name name"
+    "meta actions";
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 3px;
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+.hearth-gantt-view .hg-project-label.is-archived .hg-project-name-line {
+  grid-area: name;
+  gap: 5px;
+}
+.hearth-gantt-view .hg-project-label.is-archived .hg-project-order-handle {
+  display: none;
+}
+.hearth-gantt-view .hg-project-label.is-archived .hg-project-name {
+  font-size: .8rem;
+  white-space: nowrap;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hearth-gantt-view .hg-project-label.is-archived .hg-project-meta-row {
+  grid-area: meta;
+  gap: 6px;
+}
+.hearth-gantt-view .hg-project-label.is-archived .hg-project-meta {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.hearth-gantt-view .hg-project-label.is-archived .hg-project-progress {
+  display: none;
+}
+.hearth-gantt-view .hg-project-label.is-archived .hg-project-actions {
+  grid-area: actions;
+  width: auto;
+  margin: 0;
+}
+.hearth-gantt-view .hg-project-label.is-archived .hg-add-task-btn {
+  display: none;
+}
+/* On phone-width label columns the fixed pills would crowd the name out. */
+.hearth-gantt-view.is-mobile-narrow .hg-project-label.is-archived .hg-archived-badge,
+.hearth-gantt-view.is-mobile-narrow .hg-project-label.is-archived .hg-status {
+  display: none;
+}
+
+/* 1.1: project controls use the existing project colors and compact typography. */
+.hearth-gantt-view .hg-project-name-line { gap: 4px; }
+.hearth-gantt-view .hg-project-name-line .hg-project-name {
+  flex: 1 1 auto; min-width: 0; order: 0;
+}
+.hearth-gantt-view .hg-project-name-line .hg-status { order: 0; flex-shrink: 0; }
+.hearth-gantt-view .hg-project-icon-btn {
+  flex: 0 0 22px; width: 22px; height: 24px; min-height: 24px;
+  padding: 3px; margin: 0; border: 0; border-radius: 5px;
+  background: transparent; color: var(--text-muted); box-shadow: none; cursor: pointer;
+}
+.hearth-gantt-view .hg-project-icon-btn svg { width: 15px; height: 15px; }
+.hearth-gantt-view .hg-project-icon-btn:hover,
+.hearth-gantt-view .hg-project-icon-btn:focus-visible {
+  color: var(--text-normal); background: color-mix(in srgb, var(--project-color) 18%, transparent);
+}
+.hearth-gantt-view .hg-project-icon-btn:focus-visible { outline: 2px solid var(--project-color); outline-offset: 1px; }
+.hearth-gantt-view .hg-pin-project-btn.is-active { color: var(--project-color); background: color-mix(in srgb, var(--project-color) 15%, transparent); }
+.hearth-gantt-view .hg-project-state,
+.hearth-gantt-view .hg-project-warning { font-size: 10px; white-space: nowrap; }
+.hearth-gantt-view .hg-project-state { color: var(--text-muted); }
+.hearth-gantt-view .hg-project-warning { color: var(--text-warning, #b67720); }
+.hearth-gantt-view .hg-project-actions { gap: 6px; }
+.hearth-gantt-view .hg-project-actions .hg-button {
+  padding: 3px 7px; height: 27px; min-height: 27px; font-size: 11px;
+  border: 1px solid color-mix(in srgb, var(--project-color) 35%, transparent);
+  border-radius: 8px; background: color-mix(in srgb, var(--project-color) 7%, var(--background-primary));
+  color: var(--text-normal); box-shadow: none;
+}
+.hearth-gantt-view .hg-project-actions .hg-button:hover { background: color-mix(in srgb, var(--project-color) 18%, var(--background-primary)); }
+.hearth-gantt-view .hg-project-actions .hg-archive-project-btn { margin-left: auto; }
+.hearth-gantt-view .hg-project-label.is-collapsed,
+.hearth-gantt-view .hg-project-track.is-collapsed { min-height: 0 !important; }
+.hearth-gantt-view .hg-project-label.is-collapsed {
+  display: flex !important; flex-direction: column; justify-content: center;
+  gap: 6px; padding-top: 8px !important; padding-bottom: 8px !important;
+}
+.hearth-gantt-view .hg-project-label.is-collapsed .hg-project-name-line { width: 100%; }
+.hearth-gantt-view .hg-project-label.is-collapsed .hg-project-name {
+  font-size: .82rem; display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;
+}
+.hearth-gantt-view .hg-project-label.is-collapsed .hg-project-meta-row { width: 100%; gap: 6px; }
+.hearth-gantt-view .hg-project-label.is-collapsed .hg-project-actions { display: none; }
+.hearth-gantt-view .hg-project-label.is-collapsed .hg-project-meta { flex: 1 1 auto; min-width: 0; }
+.hearth-gantt-view .hg-project-label.is-collapsed .hg-project-progress { max-width: 40px; }
+.hearth-gantt-view .hg-project-summary-bar {
+  position: absolute; top: 23px; height: 25px; min-height: 25px; padding: 2px 8px;
+  border-radius: 7px; border: 1px solid color-mix(in srgb, var(--project-color) 65%, transparent);
+  background: color-mix(in srgb, var(--project-color) 16%, var(--background-primary));
+  color: var(--text-normal); text-align: left; font-size: 11px; box-shadow: none;
+  white-space: nowrap; text-overflow: ellipsis; overflow: hidden; z-index: 2;
+}
+.hearth-gantt-view .hg-project-summary-hint { position: sticky; left: 14px; top: 25px; display: inline-block; margin: 25px 14px 0; color: var(--text-faint); font-size: 11px; }
+.hearth-gantt-view .hg-completed-group { background: color-mix(in srgb, var(--hg-accent) 6%, var(--background-primary)); }
+.hearth-gantt-view .hg-completed-group .hg-archived-toggle { color: var(--text-normal); }
+.hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head .hg-actions { flex-wrap: wrap; justify-content: flex-end; row-gap: 4px; }
+@media (max-width: 720px) {
+  .hearth-gantt-view .hg-project-name-line .hg-color-dot,
+  .hearth-gantt-view .hg-project-name-line .hg-pin-project-btn { display: none; }
+  .hearth-gantt-view .hg-project-icon-btn { flex-basis: 20px; width: 20px; }
+  .hearth-gantt-view .hg-project-meta-row .hg-project-progress { display: none; }
+}
+.hg-project-management-actions { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--background-modifier-border); }
+.hg-project-management-actions .hg-button { font-size: 12px; }
+.hearth-gantt-view .hg-project-meta-row .hg-status { font-size: 10px; padding: 1px 5px; }
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-progress { flex: 0 0 32px; width: 32px; }
+.hearth-gantt-view .hg-project-meta-row:has(.hg-project-state) .hg-project-progress,
+.hearth-gantt-view .hg-project-meta-row:has(.hg-project-warning) .hg-project-progress { display: none; }
+.hearth-gantt-view .hg-project-actions .hg-pin-project-btn { order: 2; }
+.hearth-gantt-view .hg-project-actions .hg-archive-project-btn { order: 3; }
+.hearth-gantt-view .hg-color-dot.hg-pinned-mark { width: 12px; height: 14px; background: transparent; box-shadow: none; color: var(--project-color); }
+.hearth-gantt-view .hg-pinned-mark svg { width: 12px; height: 14px; }
+
+/* 1.2: find and focus projects without changing task membership or saved order. */
+.hearth-gantt-view .hg-project-browser {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
+  padding: 10px 12px; flex-shrink: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--hg-home-surface, var(--background-primary));
+}
+.hearth-gantt-view .hg-project-search-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 290px; }
+.hearth-gantt-view .hg-project-search { display: flex; align-items: center; gap: 6px; flex: 1 1 170px; max-width: 310px; min-width: 150px; }
+.hearth-gantt-view .hg-project-search-icon { color: var(--text-muted); display: flex; }
+.hearth-gantt-view .hg-project-search-icon svg { width: 15px; height: 15px; }
+.hearth-gantt-view input.hg-project-search-input {
+  width: 100%; min-width: 0; height: 30px; border-radius: 8px; font-size: 12px;
+  background: var(--background-primary); border-color: var(--background-modifier-border);
+}
+.hearth-gantt-view .hg-project-result-count { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.hearth-gantt-view .hg-project-filters { display: flex; flex-wrap: wrap; gap: 5px; }
+.hearth-gantt-view .hg-project-filter,
+.hearth-gantt-view .hg-project-clear {
+  height: 27px; min-height: 27px; padding: 3px 8px; border-radius: 7px; font-size: 11px;
+  border: 1px solid transparent; background: transparent; box-shadow: none; white-space: nowrap;
+  color: var(--text-muted); cursor: pointer;
+}
+.hearth-gantt-view .hg-project-filter:hover,
+.hearth-gantt-view .hg-project-clear:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.hearth-gantt-view .hg-project-filter.is-active {
+  background: color-mix(in srgb, var(--hg-accent, #8ec723) 13%, var(--background-primary));
+  border-color: color-mix(in srgb, var(--hg-accent, #8ec723) 45%, transparent); color: var(--text-normal); font-weight: 600;
+}
+.hearth-gantt-view .hg-project-filter:focus-visible,
+.hearth-gantt-view .hg-project-clear:focus-visible { outline: 2px solid var(--hg-accent, #8ec723); outline-offset: 1px; }
+.hearth-gantt-view .hg-project-no-results { padding: 32px 16px; text-align: center; }
+.hearth-gantt-view.is-mobile-narrow .hg-project-browser { padding: 8px; gap: 7px; }
+.hearth-gantt-view.is-mobile-narrow .hg-project-search { max-width: none; }
+.hearth-gantt-view.is-mobile-narrow .hg-project-filters { flex-wrap: nowrap; overflow-x: auto; width: 100%; }
