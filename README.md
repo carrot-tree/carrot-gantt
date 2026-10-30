@@ -2,6 +2,14 @@
 
 适用于 Obsidian 的项目甘特图。支持 TaskNotes，可单独打开，也可嵌入 Carrot Home。
 
+## 实际效果
+
+![Carrot Gantt 实际运行截图：虚构项目的任务排期、项目进度、今日线及已完成项目折叠区](docs/images/project-gantt.png)
+
+在同一条时间轴上查看项目和关联任务：左侧汇总完成数量、日期范围和进度，右侧展示任务排期与今日线；顶部可搜索项目、切换状态筛选，已完成项目可折叠收纳。
+
+> 截图来自 Obsidian 桌面端的独立演示库，展示 **Carrot Gantt 1.2.0 嵌入 Carrot Home 2.0.1** 的实际效果，配合 TaskNotes 4.13.1 使用。项目名、任务内容和日期均为虚构示例，不含私人笔记或真实账号数据。背景与卡片外观属于 Carrot Home 的演示设置，仅用于展示；Carrot Gantt 也可独立打开，无需安装 Carrot Home。
+
 ## 通过 BRAT 安装与更新
 
 1. 在 Obsidian 社区插件中安装并启用 **BRAT**。
