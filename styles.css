@@ -1,4 +1,5 @@
 .hearth-gantt-view {
+  --hg-project-column-width: 240px;
   --hg-accent: var(--interactive-accent, #8ec723);
   --hg-line: color-mix(in srgb, var(--background-modifier-border) 78%, transparent);
   --hg-card: color-mix(in srgb, var(--background-primary) 88%, transparent);
@@ -2001,7 +2002,7 @@
  * one deterministic four-row layout so metadata never sits underneath the
  * progress bar or gets cropped at larger interface font sizes. */
 .hearth-gantt-view:not(.is-mobile-narrow) .hg-board {
-  grid-template-columns: 240px minmax(0, 1fr) !important;
+  grid-template-columns: var(--hg-project-column-width) minmax(0, 1fr) !important;
 }
 
 .hearth-gantt-view:not(.is-mobile-narrow) .hg-project-label {
@@ -2913,36 +2914,140 @@
 
 /* 1.2: find and focus projects without changing task membership or saved order. */
 .hearth-gantt-view .hg-project-browser {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px;
-  padding: 10px 12px; flex-shrink: 0;
-  border-bottom: 1px solid var(--background-modifier-border);
-  background: var(--hg-home-surface, var(--background-primary));
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+  box-sizing: border-box; width: fit-content; max-width: 100%; min-width: 0;
+  align-self: flex-start; padding: 8px 14px; flex-shrink: 0;
+  background: transparent;
 }
-.hearth-gantt-view .hg-project-search-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1 1 290px; }
-.hearth-gantt-view .hg-project-search { display: flex; align-items: center; gap: 6px; flex: 1 1 170px; max-width: 310px; min-width: 150px; }
+/* Size the search group before the outer flex wrap; shrink the input, not the group. */
+.hearth-gantt-view .hg-project-search-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 0 0 auto; width: max-content; min-width: 0; max-width: 100%; }
+.hearth-gantt-view .hg-project-search { display: flex; align-items: center; gap: 6px; flex: 1 1 150px; width: 240px; max-width: 240px; min-width: min(150px, 100%); }
+/* Keep the input inside the project column: 14px inset on either side.
+   The 118px mobile column keeps its independent, usable search layout. */
+.hearth-gantt-view:not(.is-mobile-narrow) .hg-project-search {
+  width: calc(var(--hg-project-column-width) - 28px);
+  max-width: calc(var(--hg-project-column-width) - 28px);
+}
 .hearth-gantt-view .hg-project-search-icon { color: var(--text-muted); display: flex; }
 .hearth-gantt-view .hg-project-search-icon svg { width: 15px; height: 15px; }
 .hearth-gantt-view input.hg-project-search-input {
-  width: 100%; min-width: 0; height: 30px; border-radius: 8px; font-size: 12px;
+  width: 100%; min-width: 0; height: 28px; border-radius: 7px; font-size: 12px;
   background: var(--background-primary); border-color: var(--background-modifier-border);
 }
 .hearth-gantt-view .hg-project-result-count { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
-.hearth-gantt-view .hg-project-filters { display: flex; flex-wrap: wrap; gap: 5px; }
-.hearth-gantt-view .hg-project-filter,
-.hearth-gantt-view .hg-project-clear {
-  height: 27px; min-height: 27px; padding: 3px 8px; border-radius: 7px; font-size: 11px;
+.hearth-gantt-view .hg-project-filters { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; max-width: 100%; }
+.hearth-gantt-view .hg-project-filter {
+  height: 28px; min-height: 28px; flex-shrink: 0; padding: 3px 8px; border-radius: 7px; font-size: 11px;
   border: 1px solid transparent; background: transparent; box-shadow: none; white-space: nowrap;
   color: var(--text-muted); cursor: pointer;
 }
-.hearth-gantt-view .hg-project-filter:hover,
-.hearth-gantt-view .hg-project-clear:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.hearth-gantt-view .hg-project-filter:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
 .hearth-gantt-view .hg-project-filter.is-active {
   background: color-mix(in srgb, var(--hg-accent, #8ec723) 13%, var(--background-primary));
   border-color: color-mix(in srgb, var(--hg-accent, #8ec723) 45%, transparent); color: var(--text-normal); font-weight: 600;
 }
-.hearth-gantt-view .hg-project-filter:focus-visible,
-.hearth-gantt-view .hg-project-clear:focus-visible { outline: 2px solid var(--hg-accent, #8ec723); outline-offset: 1px; }
+.hearth-gantt-view .hg-project-filter:focus-visible { outline: 2px solid var(--hg-accent, #8ec723); outline-offset: 1px; }
 .hearth-gantt-view .hg-project-no-results { padding: 32px 16px; text-align: center; }
-.hearth-gantt-view.is-mobile-narrow .hg-project-browser { padding: 8px; gap: 7px; }
+.hearth-gantt-view.is-mobile-narrow .hg-project-browser { width: 100%; padding: 8px; gap: 6px; }
 .hearth-gantt-view.is-mobile-narrow .hg-project-search { max-width: none; }
 .hearth-gantt-view.is-mobile-narrow .hg-project-filters { flex-wrap: nowrap; overflow-x: auto; width: 100%; }
+
+/* 1.2.1: one compact toolbar; low-frequency actions remain in menus. */
+.hg-topbar.hg-topbar-actions-only .hg-actions,
+.hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head .hg-actions {
+  flex-wrap: nowrap !important;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  min-width: 0;
+}
+.hg-date-controls { display: flex; align-items: center; flex-shrink: 0; gap: 6px; }
+.hg-topbar .hg-date-controls .hg-button { margin: 0; }
+.hg-topbar .hg-actions .hg-button { white-space: nowrap; flex-shrink: 0; }
+/* Trim horizontal space around text without reducing the 34px hit height. */
+.hg-topbar.hg-topbar-actions-only .hg-actions .hg-button:is(.hg-today-btn, .hg-sort-menu-btn, .hg-add-project-btn),
+.hearth-view .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head.hg-topbar-actions-only .hg-button:is(.hg-today-btn, .hg-sort-menu-btn, .hg-add-project-btn) {
+  padding-inline: 8px;
+}
+.hg-topbar .hg-actions .hg-zoom-btn,
+.hg-topbar .hg-actions .hg-more-btn { width: 34px; min-width: 34px; padding: 4px; justify-content: center; }
+.hg-topbar .hg-more-btn svg { width: 17px; height: 17px; }
+.hg-topbar.is-condensed .hg-actions .hg-zoom-btn,
+.hg-topbar.is-condensed .hg-actions .hg-sort-menu-btn { display: none !important; }
+.hg-topbar.is-condensed .hg-date-controls .hg-today-btn { border-radius: 8px; border-left-width: 1px; border-left-style: solid; }
+.hg-topbar .hg-button:focus-visible { outline: 2px solid var(--hg-accent); outline-offset: 2px; }
+.hearth-gantt-view .hg-project-name-line .hg-pin-project-btn.is-active {
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--project-color); background: transparent;
+}
+.hearth-gantt-view .hg-project-name-line .hg-pin-project-btn.is-active:hover {
+  background: color-mix(in srgb, var(--project-color) 15%, transparent);
+}
+
+/* Home 1.1.x explicitly reserves a second line for the former wide toolbar. */
+.hearth-view .hearth-card > .hearth-card-head:has(> .hg-topbar.hg-topbar-in-card-head.hg-topbar-actions-only:not(.hg-compact-entry-toolbar)) {
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  column-gap: 16px;
+}
+.hearth-view .hearth-card > .hearth-card-head:has(> .hg-topbar.hg-topbar-in-card-head.hg-topbar-actions-only:not(.hg-compact-entry-toolbar)) > .hearth-card-title {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0;
+}
+.hearth-view .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head.hg-topbar-actions-only:not(.hg-compact-entry-toolbar) {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  margin-top: 0 !important;
+}
+.hearth-gantt-view.is-mobile-narrow:not(.is-compact-entry) .hg-topbar .hg-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+  width: 100%;
+}
+.hearth-gantt-view.is-mobile-narrow:not(.is-compact-entry) .hg-topbar .hg-actions > .hg-button { width: auto; min-width: 34px; }
+
+.hearth-view .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head.hg-topbar-actions-only:not(.hg-compact-entry-toolbar) .hg-actions {
+  flex-wrap: nowrap !important;
+  width: auto !important;
+  gap: 8px;
+}
+
+/* Home 1.1.0 / 1.1.3 allow toolbar buttons to shrink and wrap text. Match
+   their selector, plus actions-only, so either stylesheet load order keeps
+   the new spacing and hit areas. Do not affect the compact "打开" launcher. */
+.hearth-view .hearth-card > .hearth-card-head > .hg-topbar.hg-topbar-in-card-head.hg-topbar-actions-only:not(.hg-compact-entry-toolbar) .hg-button {
+  flex: 0 0 auto;
+  min-width: 34px !important;
+  min-height: 34px;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+/* Search-to-grid rhythm: Home's native view padding used to add 12px only
+   above the search row. Let the browser own its balanced vertical spacing. */
+.hearth-card .view-content:has(> .hearth-gantt-view:not(.is-compact-entry)) {
+  padding-top: 0;
+}
+.hearth-gantt-view .hg-board {
+  border-top: 1px solid var(--hg-line);
+}
+
+/* One continuous table surface, independent of either column's width or
+   horizontal scroll position. Keep the 20px month + 29px day geometry. */
+.hearth-gantt-view .hg-label-header,
+.hearth-gantt-view .hg-time-header {
+  background:
+    linear-gradient(color-mix(in srgb, var(--hg-accent) 4%, transparent), color-mix(in srgb, var(--hg-accent) 4%, transparent)),
+    color-mix(in srgb, var(--hg-home-surface) 94%, transparent) !important;
+  border-bottom-color: var(--hg-line) !important;
+  box-shadow: none;
+}
+.hearth-gantt-view .hg-label-header {
+  padding-top: 20px;
+  font-weight: 600;
+}
+/* Clip paint without creating a scroll container that traps the month label.
+   The existing month stays visible until its own segment leaves the pane. */
+.hearth-gantt-view .hg-time-header { overflow: clip; }
+.hearth-gantt-view .hg-month-label { position: sticky; left: 0; }

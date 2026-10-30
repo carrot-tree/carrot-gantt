@@ -1,7 +1,7 @@
 {
   "id": "carrot-gantt",
   "name": "Carrot Gantt",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "minAppVersion": "1.8.7",
   "description": "A compact interactive Gantt chart view designed to be embedded in Carrot Home.",
   "author": "Claudian",

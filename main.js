@@ -1269,6 +1269,8 @@ class GanttView extends ItemView {
         this.pendingTaskDateOverrides.clear();
         this.responsiveObserver?.disconnect();
         this.responsiveObserver = null;
+        this.toolbarObserver?.disconnect();
+        this.toolbarObserver = null;
         this.closePopover();
         this.clearCompactHomeEntry();
         this.contentEl.empty();
@@ -1961,7 +1963,7 @@ class GanttView extends ItemView {
         menu.addSeparator();
         const scope = this.projectQuery || (this.projectFilter || 'all') !== 'all' ? '筛选出的' : '所有';
         for (const collapsed of [true, false]) menu.addItem((item) => item.setTitle(`${collapsed ? '收起' : '展开'}${scope}进行中项目`).setIcon(collapsed ? 'chevrons-down-up' : 'chevrons-up-down').onClick(() => this.withPageScrollPreserved(() => this.setAllProjectsCollapsed(collapsed))));
-        menu.showAtMouseEvent(event);
+        this.showToolbarMenu(menu, event);
     }
     async setAllProjectsCollapsed(collapsed) {
         const previous = this.plugin.settings.projectViewState || {};
@@ -2024,9 +2026,14 @@ class GanttView extends ItemView {
         this.timelineExtraFuture = 0;
         await this.withPageScrollPreserved(() => this.render({ reuseBoard: true }));
     }
-    async clearProjectFilters() {
+    async toggleProjectFilter(filter) {
+        await this.setProjectFilter((this.projectFilter || 'all') === filter ? 'all' : filter);
+    }
+    async clearProjectSearch() {
+        clearTimeout(this.projectSearchTimer);
         this.projectQuery = '';
-        await this.setProjectFilter('all');
+        if (this.projectSearchInput) this.projectSearchInput.value = '';
+        await this.setProjectFilter(this.projectFilter || 'all');
     }
     restoreProjectSearchFocus(selection) {
         if (!selection || !this.projectSearchInput?.isConnected) return;
@@ -2056,14 +2063,13 @@ class GanttView extends ItemView {
         input.addEventListener('input', search);
         input.addEventListener('compositionend', search);
         input.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape') { event.preventDefault(); this.clearProjectFilters(); }
+            if (event.key === 'Escape' && !event.isComposing) {
+                event.preventDefault();
+                return this.clearProjectSearch();
+            }
         });
         const matches = this.filterProjects(projects);
         el(searchRow, 'span', 'hg-project-result-count', `${matches.length} / ${projects.length} 个项目`);
-        if (this.projectQuery || (this.projectFilter || 'all') !== 'all') {
-            const clear = el(searchRow, 'button', 'hg-project-clear', '清除筛选');
-            clear.type = 'button'; clear.addEventListener('click', () => this.clearProjectFilters());
-        }
         const filters = el(browser, 'div', 'hg-project-filters');
         filters.setAttribute('role', 'group'); filters.setAttribute('aria-label', '项目快捷筛选');
         for (const [value, label] of [['all', '全部'], ['active', '进行中'], ['overdue', '逾期'], ['ready', '待结项'], ['completed', '已完成'], ['archived', '已归档']]) {
@@ -2071,7 +2077,7 @@ class GanttView extends ItemView {
             const button = el(filters, 'button', `hg-project-filter${(this.projectFilter || 'all') === value ? ' is-active' : ''}`, `${label} ${count}`);
             button.type = 'button'; button.dataset.filter = value;
             button.setAttribute('aria-pressed', String((this.projectFilter || 'all') === value));
-            button.addEventListener('click', () => this.setProjectFilter(value));
+            button.addEventListener('click', () => this.toggleProjectFilter(value));
         }
         this.restoreProjectSearchFocus(focusSelection);
     }
@@ -2709,6 +2715,46 @@ class GanttView extends ItemView {
         return mode === 'tasknotes' ? '数据源：TaskNotes' : '数据源：当前主页';
     }
 
+    showToolbarMenu(menu, event) {
+        // Keep the original button as the anchor for nested menus and keyboard clicks.
+        const anchor = event.currentTarget || event.target;
+        const rect = anchor?.getBoundingClientRect?.();
+        if (rect) menu.showAtPosition({ x: rect.left, y: rect.bottom + 4 });
+        else menu.showAtMouseEvent(event);
+    }
+
+    showSortMenu(event) {
+        const anchorEvent = { currentTarget: event.currentTarget || event.target };
+        const menu = new Menu();
+        menu.addItem(item => item.setTitle(`项目：${this.projectSortLabel()}`).setIcon('list-filter').onClick(() => this.showProjectSortMenu(anchorEvent)));
+        menu.addItem(item => item.setTitle(`任务：${this.taskSortLabel()}`).setIcon('list-ordered').onClick(() => this.showTaskSortMenu(anchorEvent)));
+        this.showToolbarMenu(menu, event);
+    }
+
+    showAddProjectMenu(event) {
+        const menu = new Menu();
+        menu.addItem(item => item.setTitle('新建项目').setIcon('plus').onClick(() => this.openNewProjectTaskModal()));
+        menu.addItem(item => item.setTitle('添加已有项目').setIcon('file-plus-2').onClick(() => this.withPageScrollPreserved(() => this.addProject())));
+        this.showToolbarMenu(menu, event);
+    }
+
+    showViewOptionsMenu(event, topbar) {
+        const anchorEvent = { currentTarget: event.currentTarget || event.target };
+        const menu = new Menu();
+        if (topbar.hasClass('is-condensed')) {
+            menu.addItem(item => item.setTitle('排序…').setIcon('list-filter').onClick(() => this.showSortMenu(anchorEvent)));
+            menu.addItem(item => item.setTitle('缩小时间尺度').setIcon('minus').onClick(() => this.withPageScrollPreserved(() => this.zoomTimeline(-1))));
+            menu.addItem(item => item.setTitle('放大时间尺度').setIcon('plus').onClick(() => this.withPageScrollPreserved(() => this.zoomTimeline(1))));
+            menu.addSeparator();
+        }
+        menu.addItem(item => item.setTitle(this.dataSourceLabel()).setIcon('database').onClick(() => this.showDataSourceMenu(anchorEvent)));
+        if (this.contentEl.closest?.('.hearth-card')) {
+            menu.addItem(item => item.setTitle('在独立页面打开').setIcon('external-link').onClick(() => this.openGanttInNewTab()));
+        }
+        menu.addItem(item => item.setTitle(this.board?.mode === 'tasknotes' ? '打开任务列表' : '打开任务源').setIcon('list-todo').onClick(() => this.openTaskBoard()));
+        this.showToolbarMenu(menu, event);
+    }
+
     showDataSourceMenu(event) {
         const current = this.plugin.settings.dataSource || 'dashboard';
         const menu = new Menu();
@@ -2721,7 +2767,7 @@ class GanttView extends ItemView {
         };
         menu.addItem((item) => item.setTitle('当前 Dashboard 的 Tasks 卡片').setIcon('layout-dashboard').setChecked(current === 'dashboard').onClick(() => choose('dashboard')));
         menu.addItem((item) => item.setTitle('TaskNotes 全部任务').setIcon('list-todo').setChecked(current === 'tasknotes').setDisabled(!this.isTaskNotesEnabled()).onClick(() => choose('tasknotes')));
-        menu.showAtMouseEvent(event);
+        this.showToolbarMenu(menu, event);
     }
 
     showTaskSortMenu(event) {
@@ -2743,7 +2789,7 @@ class GanttView extends ItemView {
         ].forEach(([mode, title, icon]) => {
             menu.addItem((item) => item.setTitle(title).setIcon(icon).setChecked(current === mode).onClick(() => choose(mode)));
         });
-        menu.showAtMouseEvent(event);
+        this.showToolbarMenu(menu, event);
     }
 
     captureTimelineViewport() {
@@ -2783,6 +2829,8 @@ class GanttView extends ItemView {
         this.compactDashboardMode = compactMode;
         this.closePopover();
         this.clearCompactHomeEntry();
+        this.toolbarObserver?.disconnect();
+        this.toolbarObserver = null;
         if (this.headerTopbar?.isConnected) this.headerTopbar.remove();
         this.headerTopbar = null;
         const prevTimelineScroll = this.captureTimelineViewport();
@@ -2811,55 +2859,30 @@ class GanttView extends ItemView {
         }, true);
         const top = el(root, 'div', `hg-topbar hg-topbar-actions-only${compactEntryMode ? ' hg-compact-entry-toolbar' : ''}`);
         const actions = el(top, 'div', 'hg-actions');
-        let boardBtn = null;
-        let boardActionLabel = '打开任务源';
         if (compactEntryMode) {
             const openBtn = el(actions, 'button', 'hg-button hg-primary hg-compact-open-btn', '打开');
             openBtn.setAttribute('title', '打开完整项目甘特图');
             openBtn.addEventListener('click', () => this.openGanttInNewTab());
         } else {
-            const zoomOutBtn = el(actions, 'button', 'hg-button hg-zoom-btn', '−');
-            zoomOutBtn.setAttribute('title', '缩小时间尺度');
-            zoomOutBtn.setAttribute('aria-label', '缩小时间尺度');
-            const zoomInBtn = el(actions, 'button', 'hg-button hg-zoom-btn', '+');
-            zoomInBtn.setAttribute('title', '放大时间尺度');
-            zoomInBtn.setAttribute('aria-label', '放大时间尺度');
-            const todayBtn = el(actions, 'button', 'hg-button hg-today-btn', '今天');
-            todayBtn.setAttribute('title', '回到今天');
-            const sourceBtn = el(actions, 'button', 'hg-button hg-source-btn', compactMode ? '数据源' : this.dataSourceLabel());
-            sourceBtn.setAttribute('title', this.dataSourceLabel());
-            const projectSortBtn = el(actions, 'button', 'hg-button hg-project-sort-btn', compactMode ? '项目排序' : `项目：${this.projectSortLabel()}`);
-            projectSortBtn.setAttribute('title', `项目排序：${this.projectSortLabel()}；也可在菜单中全部收起或展开`);
-            projectSortBtn.addEventListener('click', (event) => this.showProjectSortMenu(event));
-            const sortBtn = el(actions, 'button', 'hg-button hg-sort-btn', compactMode ? '任务排序' : `任务：${this.taskSortLabel()}`);
-            sortBtn.setAttribute('title', `任务排序：${this.taskSortLabel()}`);
-            zoomOutBtn.addEventListener('click', () => this.withPageScrollPreserved(() => this.zoomTimeline(-1)));
-            zoomInBtn.addEventListener('click', () => this.withPageScrollPreserved(() => this.zoomTimeline(1)));
-            todayBtn.addEventListener('click', () => this.withPageScrollPreserved(() => this.scrollToToday()));
-            sourceBtn.addEventListener('click', (event) => this.showDataSourceMenu(event));
-            sortBtn.addEventListener('click', (event) => this.showTaskSortMenu(event));
-            if (compactMode && !embeddedInHome) {
-                const moreBtn = el(actions, 'button', 'hg-button hg-more-btn', '更多');
-                moreBtn.addEventListener('click', (event) => {
-                    const menu = new Menu();
-                    menu.addItem((item) => item.setTitle(boardActionLabel).setIcon('list-todo').onClick(() => this.openTaskBoard()));
-                    menu.addItem((item) => item.setTitle('新建 TaskNotes 项目任务').setIcon('plus').onClick(() => this.openNewProjectTaskModal()));
-                    menu.addItem((item) => item.setTitle('选择现有任务或笔记作为项目').setIcon('file-plus-2').onClick(() => this.withPageScrollPreserved(() => this.addProject())));
-                    menu.showAtMouseEvent(event);
-                });
-            } else {
-                const openGanttBtn = el(actions, 'button', 'hg-button hg-open-gantt-btn', '打开甘特图');
-                openGanttBtn.setAttribute('title', '在新标签页打开完整甘特图');
-                boardBtn = el(actions, 'button', 'hg-button hg-board-btn', boardActionLabel);
-                const addProjectBtn = el(actions, 'button', 'hg-button hg-primary hg-add-project-btn', '+ 新项目');
-                const chooseProjectBtn = el(actions, 'button', 'hg-button hg-choose-project-btn', '选择现有');
-                chooseProjectBtn.setAttribute('title', '选择现有任务或笔记作为项目');
-                chooseProjectBtn.setAttribute('aria-label', '选择现有任务或笔记作为项目');
-                openGanttBtn.addEventListener('click', () => this.openGanttInNewTab());
-                boardBtn.addEventListener('click', () => this.openTaskBoard());
-                addProjectBtn.addEventListener('click', () => this.openNewProjectTaskModal());
-                chooseProjectBtn.addEventListener('click', () => this.withPageScrollPreserved(() => this.addProject()));
-            }
+            const navigation = el(actions, 'div', 'hg-date-controls');
+            navigation.setAttribute('role', 'group');
+            navigation.setAttribute('aria-label', '时间轴导航');
+            const button = (parent, cls, label, title, callback, menu = false) => {
+                const control = el(parent, 'button', `hg-button ${cls}`, label);
+                control.setAttribute('type', 'button');
+                control.setAttribute('title', title);
+                control.setAttribute('aria-label', title);
+                if (menu) control.setAttribute('aria-haspopup', 'menu');
+                control.addEventListener('click', callback);
+                return control;
+            };
+            button(navigation, 'hg-zoom-btn', '−', '缩小时间尺度', () => this.withPageScrollPreserved(() => this.zoomTimeline(-1)));
+            button(navigation, 'hg-today-btn', '今天', '回到今天', () => this.withPageScrollPreserved(() => this.scrollToToday()));
+            button(navigation, 'hg-zoom-btn', '+', '放大时间尺度', () => this.withPageScrollPreserved(() => this.zoomTimeline(1)));
+            button(actions, 'hg-sort-menu-btn', '排序 ▾', `排序：项目按${this.projectSortLabel()}，任务按${this.taskSortLabel()}`, event => this.showSortMenu(event), true);
+            button(actions, 'hg-primary hg-add-project-btn', '+ 项目 ▾', '添加项目', event => this.showAddProjectMenu(event), true);
+            const more = button(actions, 'hg-more-btn', '', '更多选项', event => this.showViewOptionsMenu(event, top), true);
+            setIcon(more, 'ellipsis');
         }
         this.attachTopbarToCarrotHomeHeader(top);
 
@@ -2895,12 +2918,6 @@ class GanttView extends ItemView {
             return;
         }
         this.board = board;
-        if (board.mode === 'tasknotes') {
-            boardActionLabel = '打开任务列表';
-        } else {
-            boardActionLabel = '打开看板';
-        }
-        if (boardBtn) boardBtn.textContent = boardActionLabel;
         if (compactEntryMode) {
             const entry = el(root, 'button', 'hg-compact-entry');
             entry.setAttribute('type', 'button');
@@ -2933,8 +2950,7 @@ class GanttView extends ItemView {
             this.timelineWasEmpty = true;
             const empty = el(root, 'div', 'hg-empty-state hg-project-no-results');
             el(empty, 'p', '', '没有匹配的项目');
-            const clear = el(empty, 'button', 'hg-button', '清除筛选，查看全部项目');
-            clear.addEventListener('click', () => this.clearProjectFilters());
+            el(empty, 'p', '', '可调整搜索关键词，或再次点击已选筛选项回到全部。');
             return;
         }
         const boardEl = el(root, 'div', 'hg-board');
@@ -3509,15 +3525,16 @@ class GanttView extends ItemView {
             const handle = el(nameLine, 'span', 'hg-project-order-handle');
             setIcon(handle, 'grip-vertical'); this.bindProjectOrderHandle(handle, rowLabel, project);
         }
-        el(nameLine, 'span', 'hg-color-dot');
+        if (!pinned) el(nameLine, 'span', 'hg-color-dot');
         const name = el(nameLine, 'span', 'hg-project-name', project.title);
         name.title = project.title;
         const status = el(nameLine, 'span', 'hg-status', `${completedCount}/${allTasks.length}`);
         status.title = `全部关联任务：已完成 ${completedCount} / 总计 ${allTasks.length}；当前显示 ${project.tasks.length} 项`;
         status.setAttribute('aria-label', status.title);
-        if (!archived && !completed) {
+        if (pinned) {
             const pin = iconButton(nameLine, `hg-pin-project-btn${pinned ? ' is-active' : ''}`, 'pin', pinned ? '取消置顶' : '置顶项目', () => this.withPageScrollPreserved(() => this.setProjectViewState(project, { pinned: !pinned })));
-            pin.setAttribute('aria-pressed', String(pinned));
+            pin.setAttribute('aria-pressed', 'true');
+            nameLine.insertBefore(pin, name);
         }
         iconButton(nameLine, 'hg-project-menu-btn', 'ellipsis', '项目操作：完成、归档与设置', (event) => this.showProjectActionsMenu(event, project));
         const metaRow = el(rowLabel, 'div', 'hg-project-meta-row');
@@ -3543,12 +3560,6 @@ class GanttView extends ItemView {
             warning.title = `项目或未完成任务最近的截止日期：${due}`;
         }
         const actions = el(rowLabel, 'div', 'hg-project-actions');
-        const pinControl = nameLine.querySelector('.hg-pin-project-btn');
-        if (pinControl) actions.appendChild(pinControl);
-        if (pinned) {
-            const dot = nameLine.querySelector('.hg-color-dot');
-            dot.addClass('hg-pinned-mark'); setIcon(dot, 'pin'); dot.title = '已置顶';
-        }
         const textAction = (label, cls, title, callback) => {
             const button = el(actions, 'button', `hg-button ${cls}`, label);
             button.title = title; button.type = 'button';
@@ -3557,7 +3568,9 @@ class GanttView extends ItemView {
         if (!archived && !completed) textAction('+ 任务', 'hg-add-task-btn', '添加关联任务', () => this.addTask(project));
         if (!archived && !completed && ready) textAction('标记已完成', 'hg-complete-project-btn', '结束项目并移入已完成区，保留全部任务', () => this.setProjectCompleted(project, true));
         if (!archived && completed) textAction('恢复进行中', 'hg-reopen-project-btn', '把项目恢复为进行中', () => this.setProjectCompleted(project, false));
-        textAction(archived ? '取消归档' : '归档', 'hg-archive-project-btn', archived ? '恢复项目，保留原完成状态' : '收进底部归档区，保留笔记和关联任务', () => this.setProjectArchived(project, !archived));
+        if ((archived || completed) && collapsed) {
+            iconButton(nameLine, 'hg-archive-project-btn', archived ? 'archive-restore' : 'archive', archived ? '取消归档' : '归档项目', () => this.withPageScrollPreserved(() => this.setProjectArchived(project, !archived)));
+        } else if (archived || completed) textAction(archived ? '取消归档' : '归档', 'hg-archive-project-btn', archived ? '恢复项目，保留原完成状态' : '收进底部归档区，保留笔记和关联任务', () => this.setProjectArchived(project, !archived));
 
         const track = el(timeRows, 'div', `hg-track hg-project-track${classes}`);
         track.dataset.projectKey = this.projectOrderKey(project);
@@ -5040,6 +5053,18 @@ class GanttView extends ItemView {
             if (!topbar || !topbar.isConnected || !this.rootEl?.isConnected) return;
             const card = this.rootEl.closest?.('.hearth-card');
             const head = card?.querySelector?.(':scope > .hearth-card-head');
+            if (typeof ResizeObserver !== 'undefined') {
+                this.toolbarObserver?.disconnect();
+                const host = card || this.contentEl;
+                const resize = () => {
+                    const width = host.getBoundingClientRect().width;
+                    const currentBar = this.headerTopbar?.isConnected ? this.headerTopbar : topbar;
+                    currentBar.toggleClass('is-condensed', width > 0 && width < (head ? 600 : 420));
+                };
+                resize();
+                this.toolbarObserver = new ResizeObserver(resize);
+                this.toolbarObserver.observe(host);
+            }
             if (!head) return;
             const existing = head.querySelector(':scope > .hg-topbar.hg-topbar-in-card-head');
             if (existing && existing !== topbar) existing.remove();
