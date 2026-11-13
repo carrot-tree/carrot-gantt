@@ -236,6 +236,21 @@
 }
 .hg-bar:hover { transform: translateY(-1px); box-shadow: 0 10px 20px rgba(0,0,0,.14); }
 .hg-bar.is-dragging { cursor: grabbing; transform: scale(1.01); opacity: .92; }
+.hg-task-status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+  background: var(--task-status-color);
+}
+.hg-task-save-message {
+  color: var(--text-muted);
+  font-size: .8rem;
+  white-space: pre-wrap;
+}
+.hg-date-undo { margin-left: 8px; }
 .hg-bar-progress { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--project-color) 40%, var(--background-primary)); opacity: 1; }
 .hg-bar-title { position: relative; z-index: 1; display: block; padding: 8px 28px; color: var(--text-normal); font-size: 0.78rem; font-weight: 750; text-shadow: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hg-resize { position: absolute; top: 0; bottom: 0; width: 14px; z-index: 3; cursor: ew-resize; }
@@ -1318,6 +1333,7 @@
   transform: rotate(45deg) scale(1.18);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--project-color) 24%, transparent);
 }
+.hg-task-due-marker.is-overdue { border-color: var(--text-error); }
 .hg-task-due-marker:focus-visible {
   outline: 2px solid var(--project-color);
   outline-offset: 4px;
@@ -3051,3 +3067,11 @@
    The existing month stays visible until its own segment leaves the pane. */
 .hearth-gantt-view .hg-time-header { overflow: clip; }
 .hearth-gantt-view .hg-month-label { position: sticky; left: 0; }
+
+/* Keep deadline signals above the existing project-colour theme layer. */
+.hearth-gantt-view .hg-task-bar.is-overdue,
+.hearth-gantt-view .hg-task-bar.is-overdue:hover,
+.hearth-gantt-view .hg-task-bar.is-overdue:focus-visible {
+  border-color: var(--text-error);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--text-error) 30%, transparent);
+}

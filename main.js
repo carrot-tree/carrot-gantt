@@ -9,7 +9,8 @@ const {
     PluginSettingTab,
     Setting,
     setIcon,
-    parseYaml
+    parseYaml,
+    stringifyYaml
 } = require('obsidian');
 
 const VIEW_TYPE = 'hearth-gantt-view';
@@ -941,6 +942,25 @@ function bodyWithoutFrontmatter(content) {
         .trim();
 }
 
+// Editing uses the complete body, including headings and surrounding whitespace.
+// Description extraction above is only suitable for read-only previews.
+function taskNoteSnapshot(text) {
+    const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+    if (/^---(?:\r?\n|$)/.test(text) && !match) throw new Error('笔记属性区格式有误，请先在笔记中修复');
+    const fm = match ? (parseYaml(match[1]) || {}) : {};
+    if (typeof fm !== 'object' || Array.isArray(fm)) throw new Error('笔记属性区格式有误');
+    return { text, fm, header: match?.[0] || '', body: match ? text.slice(match[0].length) : text, newline: text.includes('\r\n') ? '\r\n' : '\n' };
+}
+function fieldState(fm, key) {
+    return Object.prototype.hasOwnProperty.call(fm, key)
+        ? { exists: true, value: JSON.parse(JSON.stringify(fm[key] ?? null)) }
+        : { exists: false };
+}
+function sameFieldState(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+function changedTaskFields(initial, current) {
+    return Object.fromEntries(Object.entries(current).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(initial[key])));
+}
+
 class CarrotGanttSettingTab extends PluginSettingTab {
     constructor(app, plugin) {
         super(app, plugin);
@@ -1152,6 +1172,7 @@ class GanttView extends ItemView {
         this.timelineExtraFuture = 0;
         this.timelineExtending = false;
         this.pendingTimelineRangeRestore = null;
+        this.closed = false;
     }
     getViewType() {
         return VIEW_TYPE;
@@ -1163,6 +1184,7 @@ class GanttView extends ItemView {
         return 'chart-gantt';
     }
     async onOpen() {
+        this.closed = false;
         this.plugin.ganttViews ||= new Set();
         this.plugin.ganttViews.add(this);
         this.registerEvent(this.app.vault.on('modify', (file) => {
@@ -1184,6 +1206,7 @@ class GanttView extends ItemView {
             this.handleVaultDelete(file).catch((err) => console.error('Carrot Gantt deleted-file cleanup failed', err));
         }));
         this.observeResponsiveMode();
+        this.observeCalendarDate();
         await this.render();
     }
     isTaskNotesTaskFile(file, frontmatter = null) {
@@ -1249,6 +1272,10 @@ class GanttView extends ItemView {
         }
     }
     async onClose() {
+        this.closed = true;
+        clearTimeout(this.calendarTimer);
+        this.dateUndoNotice?.hide();
+        this.dateUndo = null;
         this.plugin.ganttViews?.delete(this);
         clearTimeout(this.projectSearchTimer);
         this._taskBodyCache?.clear();
@@ -1297,12 +1324,38 @@ class GanttView extends ItemView {
         return true;
     }
     scheduleRender() {
+        if (this.closed) return;
         clearTimeout(this.refreshTimer);
         if (this.activeDragCleanups.size || this.internalWriteCounts.size) {
             this.refreshTimer = window.setTimeout(() => this.scheduleRender(), 240);
             return;
         }
         this.refreshTimer = window.setTimeout(() => this.render(), 180);
+    }
+
+    observeCalendarDate() {
+        this.calendarDate = toYmd(new Date());
+        const check = () => this.checkCalendarDate();
+        this.registerDomEvent(window, 'focus', check);
+        this.registerDomEvent(document, 'visibilitychange', check);
+        this.armCalendarRefresh();
+    }
+    checkCalendarDate() {
+        if (this.closed) return;
+        const today = toYmd(new Date());
+        if (today !== this.calendarDate) {
+            this.calendarDate = today;
+            this.scheduleRender();
+        }
+        this.armCalendarRefresh();
+    }
+    armCalendarRefresh() {
+        clearTimeout(this.calendarTimer);
+        if (this.closed) return;
+        const now = new Date();
+        const midnight = new Date(now);
+        midnight.setHours(24, 0, 0, 50);
+        this.calendarTimer = window.setTimeout(() => this.checkCalendarDate(), Math.max(50, midnight - now));
     }
 
     internalWritePath(value) {
@@ -2000,6 +2053,10 @@ class GanttView extends ItemView {
         const nextDue = this.projectSortData(project).nextDue;
         return !!nextDue && nextDue < toYmd(new Date());
     }
+    taskOverdue(task) {
+        const due = dateOnly(task.dueDate || task.due || (this.board?.mode === 'tasknotes' ? '' : task.end));
+        return !task.done && !!due && due < toYmd(new Date());
+    }
     filterProjects(projects, filter = this.projectFilter || 'all', query = this.projectQuery || '') {
         const words = this.normalizeProjectQuery(query).split(/\s+/).filter(Boolean);
         return projects.filter((project) => {
@@ -2404,10 +2461,6 @@ class GanttView extends ItemView {
             } catch {}
             const rawProjects = Array.isArray(fm[projField]) ? fm[projField].map(String) : (fm[projField] != null ? [String(fm[projField])] : []);
             const projectRefs = rawProjects.map((value) => this.projectRefFromValue(value, file)).filter(Boolean);
-            let content = '';
-            try {
-                content = await this.readTaskBodyCached(file, repository);
-            } catch {}
             tasks.push({
                 id: `tasknotes:${file.path}`,
                 file,
@@ -2440,7 +2493,9 @@ class GanttView extends ItemView {
                 end: timeline.end,
                 progress: done ? 100 : 0,
                 color: DEFAULT_COLORS[0],
-                notes: content,
+                notes: '', // Read the fresh, complete body only when opening its editor.
+                sourceFrontmatter: JSON.parse(JSON.stringify(fm)),
+                statusColor: statusColors.get(status.toLowerCase()) || '',
                 isProject: this.isProjectMarkerValue(fm[PROJECT_MARKER_FIELD]),
                 linkedStatus: status,
                 priority: typeof fm[fields.priority] === 'string' ? fm[fields.priority] : ''
@@ -2818,6 +2873,11 @@ class GanttView extends ItemView {
         pane.scrollTop = snapshot?.top || 0;
     }
     async render(options = {}) {
+        if (this.closed) return;
+        if (this.taskEditor && (this.taskEditor.saving || this.taskEditor.isDirty())) {
+            this.renderAfterTaskEditor = true;
+            return;
+        }
         clearTimeout(this.projectSearchTimer);
         const focusSelection = this.projectSearchInput && document.activeElement === this.projectSearchInput
             ? { start: this.projectSearchInput.selectionStart, end: this.projectSearchInput.selectionEnd } : null;
@@ -3744,6 +3804,8 @@ class GanttView extends ItemView {
         const endIdx = diffDays(range.start, parseDate(task.end));
         const bar = el(track, 'div', 'hg-bar hg-task-bar');
         bar.toggleClass('is-done', task.done === true);
+        const overdue = this.taskOverdue(task);
+        bar.toggleClass('is-overdue', overdue);
         bar.style.setProperty('--project-color', project.color);
         bar.style.top = `${topOffset + index * 42}px`;
         bar.style.left = `${startIdx * cellWidth + 4}px`;
@@ -3752,9 +3814,9 @@ class GanttView extends ItemView {
         bar.toggleClass('is-short', barWidth < Math.min(150, Math.max(72, task.title.length * 13 + 30)));
         bar.setAttribute('role', 'button');
         bar.setAttribute('tabindex', '0');
-        bar.setAttribute('aria-label', `编辑任务 ${task.title}`);
+        bar.setAttribute('aria-label', `编辑任务 ${task.title}${overdue ? '，已逾期' : ''}`);
         const estimateLabel = task.timeEstimate ? ` · 预计 ${task.timeEstimate} 分钟` : '';
-        const dueLabel = task.dueDate ? ` · 截止 ${task.dueDate}` : '';
+        const dueLabel = task.dueDate ? ` · 截止 ${task.dueDate}${overdue ? '（已逾期）' : ''}` : '';
         bar.setAttribute('title', taskNotesMode
             ? `${project.title} / ${task.title} · scheduled ${task.start}${estimateLabel}${dueLabel} · 状态：${task.status}`
             : `${project.title} / ${task.title}: ${task.start} → ${task.end}${estimateLabel}${dueLabel} · 状态：${task.status}`);
@@ -3764,6 +3826,7 @@ class GanttView extends ItemView {
             const dueIdx = diffDays(range.start, parseDate(task.dueDate));
             if (dueIdx >= 0 && dueIdx < range.days) {
                 const marker = el(track, 'span', 'hg-task-due-marker');
+                marker.toggleClass('is-overdue', overdue);
                 marker.style.top = `${topOffset + index * 42 + 17}px`;
                 marker.style.left = `${dueIdx * cellWidth + cellWidth / 2}px`;
                 marker.style.setProperty('--project-color', project.color);
@@ -3778,7 +3841,18 @@ class GanttView extends ItemView {
         const fill = el(bar, 'div', 'hg-bar-progress');
         fill.style.width = `${task.progress}%`;
         if (task.done === true) el(bar, 'span', 'hg-done-mark', '✓');
-        el(bar, 'span', 'hg-bar-title', task.title);
+        const barTitle = el(bar, 'span', 'hg-bar-title');
+        if (taskNotesMode && task.scheduledDate && task.dueDate && bar.hasClass('is-short')) {
+            const markerOffset = (diffDays(range.start, parseDate(task.dueDate)) - startIdx) * cellWidth + cellWidth / 2 - 4;
+            // Short labels overflow their pill. Keep a nearby due diamond clear.
+            if (markerOffset >= 0 && markerOffset < task.title.length * 13 + 30) barTitle.style.paddingLeft = `${markerOffset + 12}px`;
+        }
+        if (taskNotesMode && task.statusColor && !task.done) {
+            const status = el(barTitle, 'span', 'hg-task-status-dot');
+            status.style.setProperty('--task-status-color', task.statusColor);
+            status.setAttribute('aria-hidden', 'true');
+        }
+        barTitle.appendChild(document.createTextNode(task.title));
         if (this.taskSortMode() === 'manual') {
             const taskOrderHandle = el(bar, 'span', 'hg-task-order-handle');
             setIcon(taskOrderHandle, 'grip-vertical');
@@ -3902,6 +3976,14 @@ class GanttView extends ItemView {
         const menu = new Menu();
         menu.addItem((item) => item.setTitle('编辑任务').setIcon('pencil').onClick(() => this.openTaskPopover(project, task, anchor)));
         menu.addItem((item) => item.setTitle(this.board?.mode === 'tasknotes' ? '打开任务笔记' : (task.linkTarget ? '打开详情页' : '创建详情页')).setIcon('file-text').onClick(() => this.openTaskDetail(task)));
+        if (this.board?.mode === 'tasknotes') {
+            menu.addSeparator();
+            menu.addItem(item => item.setTitle(task.done ? '恢复为待办' : '标记已完成').setIcon(task.done ? 'rotate-ccw' : 'check')
+                .onClick(() => this.updateTask(task, { done: !task.done })));
+            const field = task.scheduledDate ? 'scheduled' : task.dueDate ? 'due' : null;
+            if (field) for (const days of [1, 7]) menu.addItem(item => item.setTitle(`${field === 'scheduled' ? '计划开始' : '截止'}后移 ${days} 天`).setIcon('calendar-plus')
+                .onClick(() => this.updateTask(task, { [field]: toYmd(addDays(parseDate(field === 'scheduled' ? task.scheduledDate : task.dueDate), days)) })));
+        }
         menu.addSeparator();
         menu.addItem((item) => item.setTitle('删除任务').setIcon('trash-2').onClick(() => this.deleteTask(task)));
         menu.showAtMouseEvent(evt);
@@ -4008,6 +4090,16 @@ class GanttView extends ItemView {
         }
         return false;
     }
+    async waitForTaskCacheStates(file, expected, tries = 80) {
+        const entries = Object.entries(expected);
+        if (!entries.length) return true;
+        for (let i = 0; i < tries; i++) {
+            const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+            if (fm && entries.every(([key, state]) => sameFieldState(fieldState(fm, key), state))) return true;
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        return false;
+    }
     sanitizeTaskTitleForFilename(title) {
         if (!title || typeof title !== 'string') return null;
         try {
@@ -4037,166 +4129,146 @@ class GanttView extends ItemView {
         }
         return `${parent}${base.slice(0, 50)}-${Date.now().toString(36)}.md`;
     }
-    async updateTaskNotes(task, patch) {
+    async readTaskNotesSnapshot(task) {
+        const file = task.file instanceof TFile ? task.file : this.resolveLinkedFile(task);
+        if (!(file instanceof TFile) || this.app.vault.getAbstractFileByPath(file.path) !== file) throw new Error('任务笔记已移动或不存在，请重新打开');
+        return { ...taskNoteSnapshot(await this.app.vault.read(file)), file };
+    }
+    async commitTaskNoteFields(file, desired, { expected = {}, body, expectedBody } = {}) {
+        if (this.app.vault.getAbstractFileByPath(file.path) !== file) throw new Error('任务笔记已被删除或替换');
+        if (body !== undefined && typeof expectedBody !== 'string') throw new Error('正文尚未成功读取，无法保存正文');
+        let result;
+        // Vault.process serializes edits against the latest file contents. Check
+        // and write in the same callback so a concurrent edit cannot slip between.
+        await this.app.vault.process(file, text => {
+            const snapshot = taskNoteSnapshot(text);
+            for (const [key, state] of Object.entries(expected)) {
+                if (!sameFieldState(fieldState(snapshot.fm, key), state)) throw new Error(`「${key}」已在别处修改，请重新打开任务后再改`);
+            }
+            if (body !== undefined && snapshot.body !== expectedBody) throw new Error('笔记正文已在别处修改；本次未保存，请复制当前草稿后重新打开');
+            const before = {}, after = {};
+            for (const [key, state] of Object.entries(desired)) {
+                const old = fieldState(snapshot.fm, key);
+                if (sameFieldState(old, state)) continue;
+                before[key] = old; after[key] = state;
+                if (state.exists) snapshot.fm[key] = state.value;
+                else delete snapshot.fm[key];
+            }
+            const nextBody = body === undefined ? snapshot.body : String(body).replace(/\r?\n/g, snapshot.newline);
+            const changed = Object.keys(before).length > 0 || nextBody !== snapshot.body;
+            result = { before, after, changed };
+            if (!changed) return text;
+            // A body-only edit leaves the original YAML bytes untouched.
+            if (!Object.keys(before).length) return snapshot.header + nextBody;
+            snapshot.fm[this.taskNotesFields().dateModified] = new Date().toISOString();
+            const yaml = stringifyYaml(snapshot.fm).trimEnd().replace(/\r?\n/g, snapshot.newline);
+            return `---${snapshot.newline}${yaml}${snapshot.newline}---${snapshot.newline}${nextBody}`;
+        });
+        return result;
+    }
+    async updateTaskNotes(task, patch, options = {}) {
+        this.lastTaskSaveError = '';
         const file = task.file instanceof TFile ? task.file : this.resolveLinkedFile(task);
         if (!(file instanceof TFile)) return false;
         const fields = this.taskNotesFields();
-        const projField = fields.projects;
-        const statusField = fields.status;
-        const titleField = fields.title;
-        const priorityField = fields.priority;
-        const transaction = this.beginInternalWrite(file);
-        let overridePath = file.path;
-        const scheduledPatch = patch.scheduled !== undefined ? patch.scheduled : patch.start;
-        const duePatch = patch.due !== undefined ? patch.due : patch.end;
-        const estimatePatch = patch.timeEstimate;
-        const projectsPatch = patch.projects !== undefined
-            ? [...new Set((Array.isArray(patch.projects) ? patch.projects : [patch.projects]).map((value) => String(value ?? '').trim()).filter(Boolean))]
-            : undefined;
-        const priorityPatch = patch.priority !== undefined ? String(patch.priority || '').trim() : undefined;
-        const touchesDates = scheduledPatch !== undefined || duePatch !== undefined || estimatePatch !== undefined;
-        const nextScheduled = scheduledPatch !== undefined
-            ? (scheduledPatch ? replaceDatePart(task.scheduled, scheduledPatch) : '')
-            : (task.scheduled || '');
-        const nextDue = duePatch !== undefined
-            ? (duePatch ? replaceDatePart(task.due, duePatch) : '')
-            : (task.due || '');
-        const nextEstimate = estimatePatch !== undefined
-            ? positiveMinutes(estimatePatch)
-            : positiveMinutes(task.timeEstimate);
-        const expectedDates = {};
-        if (scheduledPatch !== undefined) expectedDates[fields.scheduled] = scheduledPatch || null;
-        if (duePatch !== undefined) expectedDates[fields.due] = duePatch || null;
-        if (estimatePatch !== undefined) expectedDates[fields.timeEstimate] = positiveMinutes(estimatePatch) || null;
-        if (touchesDates) {
-            this.pendingTaskDateOverrides.set(overridePath, {
-                scheduled: nextScheduled,
-                due: nextDue,
-                timeEstimate: nextEstimate,
-                expiresAt: Date.now() + 15000
-            });
+        const desired = {};
+        const set = (key, value) => { desired[key] = value == null || value === '' ? { exists: false } : { exists: true, value }; };
+        const scheduled = patch.scheduled !== undefined ? patch.scheduled : patch.start;
+        const due = patch.due !== undefined ? patch.due : patch.end;
+        if (scheduled !== undefined) set(fields.scheduled, scheduled ? replaceDatePart(task.scheduled, scheduled) : null);
+        if (due !== undefined) set(fields.due, due ? replaceDatePart(task.due, due) : null);
+        if (patch.timeEstimate !== undefined) set(fields.timeEstimate, positiveMinutes(patch.timeEstimate) ? Math.round(positiveMinutes(patch.timeEstimate)) : null);
+        if (patch.title !== undefined) set(fields.title, String(patch.title).trim() || '未命名任务');
+        if (patch.priority !== undefined) set(fields.priority, String(patch.priority || '').trim());
+        if (patch.status !== undefined || patch.done !== undefined) {
+            let status = patch.status ?? task.status;
+            const done = patch.status !== undefined ? this.isCompletedStatusValue(status) : patch.done;
+            if (patch.status === undefined) status = done ? this.tnCompleted : (this.isCompletedStatusValue(status) ? this.tnOpen : status);
+            set(fields.status, status || this.tnOpen);
+            set(fields.completedDate, done ? toYmd(new Date()) : null);
         }
+        if (patch.projects !== undefined) {
+            const projects = [...new Set((Array.isArray(patch.projects) ? patch.projects : [patch.projects]).map(value => String(value ?? '').trim()).filter(Boolean))];
+            set(fields.projects, projects.length ? projects : null);
+        } else if (patch.project !== undefined) {
+            const fm = { [fields.projects]: task.rawProjects?.slice() || [] };
+            if (patch.project === UNASSIGNED_PROJECT) this.stripTaskProject(fm, fields.projects, task.project);
+            else this.replaceTaskProject(fm, fields.projects, task.project, this.canonicalProjectValue(patch.project, task));
+            desired[fields.projects] = fieldState(fm, fields.projects);
+        }
+        const baseline = task.sourceFrontmatter || this.getLinkedFrontmatter(file) || {};
+        const expected = Object.fromEntries(Object.keys(desired).map(key => [key, fieldState(baseline, key)]));
+        const transaction = this.beginInternalWrite(file);
         try {
-            // Update only the requested TaskNotes properties. Its bulk updateTask
-            // can remove the title property when storeTitleInFilename is enabled,
-            // even for a duration-only edit, exposing filename collision suffixes.
-            const datePatchKeys = new Set(['scheduled', 'due', 'timeEstimate', 'start', 'end']);
-            const isPureDatePatch = touchesDates && Object.keys(patch).every((key) => datePatchKeys.has(key));
-            const taskNotesPlugin = this.app.plugins?.plugins?.[TASKNOTES_PLUGIN_ID];
-            if (isPureDatePatch && taskNotesPlugin?.cacheManager?.getTaskInfo && taskNotesPlugin?.taskService?.updateProperty) {
-                let taskInfo = await taskNotesPlugin.cacheManager.getTaskInfo(file.path);
-                if (!taskInfo) throw new Error(`TaskNotes 找不到任务：${file.path}`);
-                const servicePatch = {};
-                if (scheduledPatch !== undefined) servicePatch.scheduled = nextScheduled || null;
-                if (duePatch !== undefined) servicePatch.due = nextDue || null;
-                if (estimatePatch !== undefined) servicePatch.timeEstimate = nextEstimate || null;
-                for (const [property, value] of Object.entries(servicePatch)) {
-                    taskInfo = await taskNotesPlugin.taskService.updateProperty(taskInfo, property, value);
-                }
-                const cacheReady = await this.waitForTaskCacheFields(file, expectedDates);
-                const repository = this.getTaskRepository();
-                if (typeof repository?.invalidate === 'function') repository.invalidate(file, null, 'gantt-tasknotes-service-commit');
-                if (cacheReady) this.pendingTaskDateOverrides.delete(overridePath);
-                this.plugin.refreshCarrotHome();
-                await this.render();
-                return true;
-            }
-            const touchesStatus = patch.done !== undefined || patch.status !== undefined;
-            let finalStatus = patch.status ?? task.status;
-            let finalDone = patch.done ?? task.done;
             let renameTo = null;
-            if (patch.title !== undefined && patch.title !== task.title) {
+            if (patch.title !== undefined && patch.title !== task.title && this.tn?.storeTitleInFilename !== false) {
                 const base = this.sanitizeTaskTitleForFilename(patch.title);
                 if (base) renameTo = await this.uniqueTaskNotesPath(file, base);
             }
-            const expectFmChange =
-                (patch.title !== undefined && patch.title !== task.title) ||
-                (scheduledPatch !== undefined && dateOnly(scheduledPatch) !== task.scheduledDate) ||
-                (duePatch !== undefined && dateOnly(duePatch) !== task.dueDate) ||
-                (estimatePatch !== undefined && positiveMinutes(estimatePatch) !== positiveMinutes(task.timeEstimate)) ||
-                (patch.done !== undefined && patch.done !== task.done) ||
-                (patch.status !== undefined && patch.status !== task.status) ||
-                (priorityPatch !== undefined && priorityPatch !== String(task.priority || '').trim()) ||
-                (projectsPatch !== undefined && JSON.stringify(projectsPatch) !== JSON.stringify(task.rawProjects || [])) ||
-                (patch.project !== undefined && patch.project !== task.project);
-            const beforeFm = expectFmChange ? JSON.stringify(this.app.metadataCache.getFileCache(file)?.frontmatter) : undefined;
-            if (patch.status !== undefined) {
-                // An explicit status choice is authoritative. If the user changes
-                // done -> in-progress/open, do not let the stale completed checkbox
-                // force it back to the completed status.
-                finalDone = this.isCompletedStatusValue(finalStatus);
-            } else if (finalDone) {
-                finalStatus = this.tnCompleted;
-            } else if (this.isCompletedStatusValue(finalStatus)) {
-                finalStatus = this.tnOpen;
-            }
-            await this.app.fileManager.processFrontMatter(file, (fm) => {
-                if (patch.title !== undefined && patch.title) fm[titleField] = patch.title;
-                if (projectsPatch !== undefined) {
-                    if (projectsPatch.length) fm[projField] = projectsPatch;
-                    else delete fm[projField];
-                } else if (patch.project !== undefined) {
-                    if (patch.project === UNASSIGNED_PROJECT) this.stripTaskProject(fm, projField, task.project);
-                    else this.replaceTaskProject(fm, projField, task.project, this.canonicalProjectValue(patch.project, task));
-                }
-                if (touchesStatus) {
-                    fm[statusField] = finalStatus || this.tnOpen;
-                    if (finalDone) fm[fields.completedDate] = toYmd(new Date());
-                    else delete fm[fields.completedDate];
-                }
-                if (priorityPatch !== undefined) {
-                    if (priorityPatch) fm[priorityField] = priorityPatch;
-                    else delete fm[priorityField];
-                }
-                if (scheduledPatch !== undefined) scheduledPatch ? fm[fields.scheduled] = replaceDatePart(fm[fields.scheduled], scheduledPatch) : delete fm[fields.scheduled];
-                if (duePatch !== undefined) duePatch ? fm[fields.due] = replaceDatePart(fm[fields.due], duePatch) : delete fm[fields.due];
-                if (estimatePatch !== undefined) {
-                    const minutes = positiveMinutes(estimatePatch);
-                    if (minutes) fm[fields.timeEstimate] = Math.round(minutes);
-                    else delete fm[fields.timeEstimate];
-                }
-                if (expectFmChange) fm[fields.dateModified] = new Date().toISOString();
-            });
+            const result = await this.commitTaskNoteFields(file, desired, { expected, body: patch.notes, expectedBody: options.expectedBody });
+            if (!result.changed) return true;
             if (renameTo) {
-                // Same logic as TaskNotes: rename the task note file itself when
-                // the title changes (storeTitleInFilename), not just the frontmatter.
-                try {
-                    transaction.add(renameTo);
-                    await this.app.fileManager.renameFile(file, renameTo);
-                    if (touchesDates && file.path !== overridePath) {
-                        const pending = this.pendingTaskDateOverrides.get(overridePath);
-                        this.pendingTaskDateOverrides.delete(overridePath);
-                        overridePath = file.path;
-                        if (pending) this.pendingTaskDateOverrides.set(overridePath, pending);
-                    }
-                } catch (err) {
-                    console.warn('Carrot Gantt rename task note failed', err);
-                }
+                try { transaction.add(renameTo); await this.app.fileManager.renameFile(file, renameTo); }
+                catch (error) { new Notice('任务已保存，文件名未能同步更新'); console.warn('Carrot Gantt rename task note failed', error); }
             }
-            const cacheReady = touchesDates
-                ? await this.waitForTaskCacheFields(file, expectedDates)
-                : (!expectFmChange || await this.waitForTaskCacheChange(file, beforeFm));
-            if (patch.notes !== undefined) {
-                const content = await this.app.vault.read(file);
-                const fmBlock = FRONTMATTER_RE.exec(content)?.[0] || '';
-                const newBody = String(patch.notes || '').trim();
-                await this.app.vault.modify(file, `${fmBlock}${newBody ? `\n${newBody}\n` : ''}`);
+            const cacheReady = await this.waitForTaskCacheStates(file, result.after);
+            const dateKeys = [fields.scheduled, fields.due, fields.timeEstimate].filter(key => key in result.before);
+            if (dateKeys.length) {
+                const current = { ...baseline };
+                for (const [key, state] of Object.entries(result.after)) state.exists ? current[key] = state.value : delete current[key];
+                this.pendingTaskDateOverrides.set(file.path, {
+                    scheduled: current[fields.scheduled] || '', due: current[fields.due] || '',
+                    timeEstimate: positiveMinutes(current[fields.timeEstimate]), expiresAt: Date.now() + 15000
+                });
+                if (cacheReady) this.pendingTaskDateOverrides.delete(file.path);
+                if (options.recordUndo !== false) this.showDateUndo({
+                    file, title: patch.title || task.title,
+                    before: Object.fromEntries(dateKeys.map(key => [key, result.before[key]])),
+                    after: Object.fromEntries(dateKeys.map(key => [key, result.after[key]])),
+                    expiresAt: Date.now() + 8000
+                });
             }
-            const repository = this.getTaskRepository();
-            if (typeof repository?.invalidate === 'function') repository.invalidate(file, null, 'gantt-commit');
-            if (cacheReady && touchesDates) this.pendingTaskDateOverrides.delete(overridePath);
+            this.getTaskRepository()?.invalidate?.(file, null, 'gantt-commit');
+            if (!cacheReady) this.scheduleRender();
             this.plugin.refreshCarrotHome();
             await this.render();
             return true;
-        } catch (err) {
-            if (touchesDates) this.pendingTaskDateOverrides.delete(overridePath);
-            console.error('Carrot Gantt update tasknotes task failed', err);
-            new Notice('无法更新任务');
-            await this.render();
+        } catch (error) {
+            this.lastTaskSaveError = error.message || '无法更新任务';
+            new Notice(this.lastTaskSaveError);
+            // Keep the editor and its draft visible after conflicts/read failures.
             return false;
-        } finally {
-            transaction.release();
-        }
+        } finally { transaction.release(); }
+    }
+    showDateUndo(record) {
+        this.dateUndoNotice?.hide();
+        this.dateUndo = record;
+        const message = document.createDocumentFragment();
+        el(message, 'span', '', `已修改「${record.title}」日期 `);
+        const button = el(message, 'button', 'hg-date-undo', '撤销改期');
+        button.type = 'button';
+        button.addEventListener('click', () => this.undoTaskDates(record));
+        this.dateUndoNotice = new Notice(message, 8000);
+    }
+    async undoTaskDates(record = this.dateUndo) {
+        if (!record || record !== this.dateUndo || record.expiresAt < Date.now() || record.busy) return false;
+        record.busy = true;
+        const transaction = this.beginInternalWrite(record.file);
+        try {
+            await this.commitTaskNoteFields(record.file, record.before, { expected: record.after });
+            this.pendingTaskDateOverrides.delete(record.file.path);
+            if (!(await this.waitForTaskCacheStates(record.file, record.before))) this.scheduleRender();
+            this.getTaskRepository()?.invalidate?.(record.file, null, 'gantt-date-undo');
+            this.dateUndoNotice?.hide();
+            this.dateUndo = null;
+            this.plugin.refreshCarrotHome();
+            await this.render();
+            new Notice('已撤销改期');
+            return true;
+        } catch (error) {
+            new Notice(`无法撤销：${error.message}`);
+            return false;
+        } finally { record.busy = false; transaction.release(); }
     }
     canonicalProjectValue(projectOrTitle, excludeTask, taskFile = null) {
         const requested = typeof projectOrTitle === 'object'
@@ -4330,8 +4402,8 @@ class GanttView extends ItemView {
         } catch {}
     }
 
-    async updateTask(task, patch) {
-        if (this.board?.mode === 'tasknotes') return this.updateTaskNotes(task, patch);
+    async updateTask(task, patch, options = {}) {
+        if (this.board?.mode === 'tasknotes') return this.updateTaskNotes(task, patch, options);
         if (!this.board?.file) return false;
         const file = this.board.file;
         try {
@@ -5176,6 +5248,7 @@ class GanttView extends ItemView {
     }
 
     closePopover() {
+        this.taskEditor = null;
         if (this.popover) {
             this.popover.remove();
             this.popover = null;
@@ -5183,6 +5256,10 @@ class GanttView extends ItemView {
         if (this.outsideHandler) {
             window.removeEventListener('pointerdown', this.outsideHandler, true);
             this.outsideHandler = null;
+        }
+        if (this.renderAfterTaskEditor) {
+            this.renderAfterTaskEditor = false;
+            this.scheduleRender();
         }
     }
     placePopover(pop, anchor) {
@@ -5211,15 +5288,24 @@ class GanttView extends ItemView {
 
         pop.style.left = `${Math.round(leftVp - rootRect.left)}px`;
         pop.style.top = `${Math.round(topVp - rootRect.top)}px`;
-        this.outsideHandler = (outsideEvt) => {
-            if (!pop.contains(outsideEvt.target)) this.closePopover();
+        if (this.outsideHandler) window.removeEventListener('pointerdown', this.outsideHandler, true);
+        const outsideHandler = (outsideEvt) => {
+            if (pop.contains(outsideEvt.target) || this.taskEditor?.saving || this.taskEditor?.isDirty()) return;
+            this.closePopover();
         };
-        window.setTimeout(() => window.addEventListener('pointerdown', this.outsideHandler, true), 0);
+        this.outsideHandler = outsideHandler;
+        window.setTimeout(() => {
+            if (this.popover === pop && this.outsideHandler === outsideHandler) window.addEventListener('pointerdown', outsideHandler, true);
+        }, 0);
     }
     makePopover(title, color, anchor, evt) {
         if (evt) {
             evt.preventDefault();
             evt.stopPropagation();
+        }
+        if (this.taskEditor && (this.taskEditor.saving || this.taskEditor.isDirty())) {
+            new Notice('请先保存当前修改，或点击 × 放弃草稿');
+            return null;
         }
         this.closePopover();
         if (!this.rootEl) return null;
@@ -5515,40 +5601,65 @@ class GanttView extends ItemView {
         const openBtn = el(footer, 'button', 'hg-button', isTaskNotes ? '打开任务笔记' : (task.linkTarget ? '打开详情页' : '创建详情页'));
         const deleteBtn = el(footer, 'button', 'hg-button hg-danger', '删除任务');
         const saveBtn = el(footer, 'button', 'hg-button hg-primary', '保存');
-        const save = async (ensureFile = true) => {
-            const commonPatch = {
-                title: titleInput.value.trim() || '未命名任务',
-                status: statusInput.value,
-                done: doneInput.checked,
-                notes: notesInput.value.trim(),
-                ensureFile
-            };
-            if (isTaskNotes) return await this.updateTask(task, {
-                ...commonPatch,
-                projects: [...selectedProjectRefs.values()].map((ref) => this.projectValueForTask(ref, task.file)).filter(Boolean),
-                priority: priorityInput?.value || '',
-                scheduled: startInput.value || '',
-                due: endInput.value || '',
+        for (const button of [openBtn, deleteBtn, saveBtn]) button.type = 'button';
+        const formMessage = el(pop, 'div', 'hg-task-save-message');
+        formMessage.setAttribute('role', 'status');
+        let notesSnapshot = null;
+        let notesReady = !isTaskNotes;
+        const formValues = () => ({
+            title: titleInput.value.trim() || '未命名任务', status: statusInput.value, done: doneInput.checked,
+            ...(isTaskNotes ? {
+                projects: [...selectedProjectRefs.values()].map(ref => this.projectValueForTask(ref, task.file)).filter(Boolean).sort(),
+                priority: priorityInput?.value || '', scheduled: startInput.value || '', due: endInput.value || '',
                 timeEstimate: estimateInput?.value ? Number(estimateInput.value) : null
-            });
-            const start = startInput.value || toYmd(new Date());
-            const end = endInput.value || start;
-            return await this.updateTask(task, {
-                ...commonPatch,
-                project: projectInput.value,
-                start,
-                end: parseDate(end) < parseDate(start) ? start : end
-            });
-        };
-        saveBtn.addEventListener('click', () => this.withPageScrollPreserved(() => save(true)));
-        openBtn.addEventListener('click', async () => {
-            await save(true);
-            await this.openTaskDetail({
-                ...task,
-                title: titleInput.value.trim() || task.title,
-                project: isTaskNotes ? ([...selectedProjectRefs.values()][0]?.title || UNASSIGNED_PROJECT) : projectInput.value
-            });
+            } : { project: projectInput.value, start: startInput.value || toYmd(new Date()), end: endInput.value || startInput.value || toYmd(new Date()) })
         });
+        const initial = { ...formValues(), notes: notesInput.value };
+        const getPatch = () => changedTaskFields(initial, {
+            ...formValues(), notes: notesReady ? notesInput.value : initial.notes
+        });
+        const editor = { saving: false, isDirty: () => Object.keys(getPatch()).length > 0 };
+        this.taskEditor = editor;
+        if (isTaskNotes) {
+            notesInput.disabled = true;
+            notesInput.value = '';
+            notesInput.placeholder = '正在读取完整正文……';
+            this.readTaskNotesSnapshot(task).then(snapshot => {
+                if (this.popover !== pop) return;
+                notesSnapshot = snapshot;
+                notesInput.value = snapshot.body;
+                initial.notes = notesInput.value; // Textarea normalizes CRLF for editing.
+                notesReady = true;
+                notesInput.disabled = editor.saving;
+                notesInput.placeholder = '';
+            }).catch(() => {
+                if (this.popover !== pop) return;
+                notesInput.placeholder = '正文读取失败，请打开任务笔记查看';
+                formMessage.textContent = '正文读取失败；仍可修改日期等属性，正文将保留。';
+            });
+        }
+        saveBtn.addEventListener('click', () => this.withPageScrollPreserved(async () => {
+            if (editor.saving) return;
+            const patch = getPatch();
+            if (!Object.keys(patch).length) { this.closePopover(); return; }
+            if (!isTaskNotes && patch.end && parseDate(patch.end) < parseDate(patch.start || task.start)) patch.end = patch.start || task.start;
+            editor.saving = true;
+            const controls = [...pop.querySelectorAll('input, select, textarea, button')].map(control => [control, control.disabled]);
+            for (const [control] of controls) control.disabled = true;
+            formMessage.textContent = '正在保存……';
+            try {
+                const ok = await this.updateTask(task, patch, { expectedBody: notesSnapshot?.body });
+                if (ok) this.closePopover();
+                else formMessage.textContent = this.lastTaskSaveError || '保存失败，草稿已保留，请重试。';
+            } catch (error) {
+                formMessage.textContent = `保存失败，草稿已保留：${error.message}`;
+            } finally {
+                editor.saving = false;
+                for (const [control, disabled] of controls) control.disabled = control === notesInput && notesReady ? false : disabled;
+            }
+        }));
+        openBtn.setAttribute('title', '直接打开笔记；未保存的修改保留在此弹层');
+        openBtn.addEventListener('click', () => this.openTaskDetail(task));
         deleteBtn.addEventListener('click', async () => {
             await this.withPageScrollPreserved(() => this.deleteTask(task));
         });

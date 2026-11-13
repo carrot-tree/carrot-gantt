@@ -201,21 +201,20 @@ test('a late read cannot repopulate cache maps cleared when the view closes', as
     assert.equal(h.view._taskBodyReads, null);
 });
 
-test('board reloads preserve visible notes while reading fresh edited descriptions', async () => {
+test('board reloads never read task bodies, including tasks outside any project', async () => {
     const project = new TFile('Projects/Alpha.md', '# Alpha', { carrotProject: true, title: 'Alpha' });
     const task = new TFile('Tasks/One.md', '# One\n\nOriginal description', {
         title: 'One', status: 'open', projects: ['[[Projects/Alpha]]']
     });
-    const h = harness([project, task]);
+    const orphan = new TFile('Tasks/Unassigned.md', 'Do not read me', { title: 'Unassigned', status: 'open' });
+    const h = harness([project, task, orphan]);
     const first = await h.view.loadTaskNotesBoard();
-    assert.equal(first.tasks[0].notes, 'Original description');
-    const repeated = await h.view.loadTaskNotesBoard();
-    assert.equal(repeated.tasks[0].notes, 'Original description');
-    assert.equal(h.reads.filter((name) => name === task.path).length, 1);
-    task.body = '# One\n\nEdited description';
-    task.stat.mtime++; task.stat.size = Buffer.byteLength(task.body);
+    assert.equal(first.tasks[0].notes, '');
+    assert.equal(first.tasks[0].sourceFrontmatter.title, 'One');
+    await h.view.loadTaskNotesBoard();
+    task.body = '# One\n\nEdited description'; task.stat.mtime++;
     const changed = await h.view.loadTaskNotesBoard();
-    assert.equal(changed.tasks[0].notes, 'Edited description');
-    assert.equal(h.reads.filter((name) => name === task.path).length, 2);
-    assert.equal(changed.projects[0].allTasks[0].notes, 'Edited description');
+    assert.equal(changed.tasks[0].notes, '');
+    assert.equal(h.reads.length, 0);
+    assert.equal(changed.projects[0].allTasks[0].notes, '');
 });

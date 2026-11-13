@@ -223,6 +223,7 @@ test('the registered rename event migrates internal title changes without schedu
     h.view.board = { mode: 'tasknotes', projects: [project('Alpha')], tasks: [] };
     let scheduled = 0;
     h.view.scheduleRender = () => { scheduled++; };
+    h.view.observeCalendarDate = () => {}; // Calendar lifecycle is tested separately.
     await h.view.onOpen();
     assert.equal(typeof listeners.get('rename'), 'function');
     const renderedOnOpen = h.view.renderCount;
